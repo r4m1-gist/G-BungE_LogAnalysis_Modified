@@ -19,7 +19,7 @@ Modified and extended for GIST Baja/Formula EV team logger.
 └── MatLab_Log/            # MATLAB output/reference files
 ```
 
-## Install
+## Initial Setup
 
 macOS:
 
@@ -37,54 +37,6 @@ If `py` is not available on Windows, use:
 
 ```powershell
 python -m pip install -r requirements.txt
-```
-
-## Run
-
-Edit the log selection block near the top of `pymain.py`.
-
-```python
-log_group = '2nd Test Week'
-log_files = [
-    '2025-08-17 07-13-44.log',
-]
-```
-
-For competition logs:
-
-```python
-log_group = 'Main Competition'
-log_files = [
-    '2025-08-31 02-03-58.log',
-]
-```
-
-Then run:
-
-macOS:
-
-```bash
-python3 pymain.py
-```
-
-Windows:
-
-```powershell
-py pymain.py
-```
-
-If `py` is not available on Windows, use:
-
-```powershell
-python pymain.py
-```
-
-To draw a graph, uncomment the plot function you want in the `if __name__ == "__main__":` block of `pymain.py`.
-
-Example:
-
-```python
-visualizer.plot_torque_performance()
 ```
 
 ## CAN Data Mapping
