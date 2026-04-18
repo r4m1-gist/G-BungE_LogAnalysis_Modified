@@ -9,9 +9,9 @@ Modified and extended for GIST Baja/Formula EV team logger.
 
 ```text
 .
-├── pymain.py              # Main script for selecting logs and plots
-├── pylogFetcher.py        # Binary log parser and VehicleLog data container
-├── pylogPostProcessor.py  # Plotting and analysis functions
+├── main.py                # Main script for selecting logs and plots
+├── logFetcher.py          # Binary log parser and VehicleLog data container
+├── logPostProcessor.py    # Plotting and analysis functions
 ├── Logs/
 │   ├── 2nd Test Week/
 │   └── Main Competition/

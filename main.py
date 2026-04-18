@@ -1,7 +1,7 @@
 # main
 
-from pylogFetcher import *
-from pylogPostProcessor import LogVisualizer
+from logFetcher import *
+from logPostProcessor import LogVisualizer
 
 log_data = VehicleLog()
 
