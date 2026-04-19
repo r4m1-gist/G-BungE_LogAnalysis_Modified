@@ -41,6 +41,26 @@ If `py` is not available on Windows, use:
 python -m pip install -r requirements.txt
 ```
 
+## CAN Data Mapping
+
+The parser is based on 2025 vehicle Mk.4 logs and currently focuses on MK4 CAN data.
+
+When adding new logs, place the `.log` files under `Logs/<group name>/`, then pass the group and log file names to `main.py`.
+
+| Source | Key | Data |
+| --- | --- | --- |
+| 1 | 0x0A | Actual torque, actual current, velocity |
+| 1 | 0x0B | Ud, Uq, Vmod, Vcap |
+| 1 | 0x0C | L, Vlim, Iflux, Iqmax |
+| 1 | 0x0D | Motor temperature, battery current, torque demand, actual torque |
+| 1 | 0x0E | Vtgt, Id, Iq |
+| 5 | - | Accelerometer |
+| 6 | 0 | GPS position |
+| 6 | 1 | GPS velocity and course |
+| 6 | 2 | GPS time |
+
+## CLI Usage
+
 Run the interactive menu:
 
 ```bash
@@ -104,26 +124,6 @@ Run multiple split-session logs in order:
 ```
 
 Absolute log paths are also supported. In non-interactive usage, pass at least one log with `--log`.
-
-## CAN Data Mapping
-
-The parser is based on 2025 vehicle Mk.4 logs and currently focuses on MK4 CAN data.
-
-When adding new logs, place the `.log` files under `Logs/<group name>/`, then pass the group and log file names to `main.py`.
-
-## CLI Usage
-
-| Source | Key | Data |
-| --- | --- | --- |
-| 1 | 0x0A | Actual torque, actual current, velocity |
-| 1 | 0x0B | Ud, Uq, Vmod, Vcap |
-| 1 | 0x0C | L, Vlim, Iflux, Iqmax |
-| 1 | 0x0D | Motor temperature, battery current, torque demand, actual torque |
-| 1 | 0x0E | Vtgt, Id, Iq |
-| 5 | - | Accelerometer |
-| 6 | 0 | GPS position |
-| 6 | 1 | GPS velocity and course |
-| 6 | 2 | GPS time |
 
 ## Notes
 
