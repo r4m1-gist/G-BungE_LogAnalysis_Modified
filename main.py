@@ -235,8 +235,8 @@ if __name__ == "__main__":
     [냉각 분석 v2] 고온 구간(60도 이상)에서의 순수 냉각 속도 분석
     저온(포화) 영역 데이터 배제 -> 진짜 냉각 성능(기울기) 확인
     '''
-
-    visualizer.plot_tn_curve_envelope() 
+    
+    # visualizer.plot_tn_curve_envelope() 
     # T-N Curve Envelope (토크-속도 곡선 봉우리)
     '''
     대표 토크값은 상위 95%값 사용
