@@ -16,8 +16,8 @@ Modified and extended for GIST Baja/Formula EV team logger.
 ├── Logs/
 │   ├── 2nd Test Week/
 │   └── Main Competition/
-├── MatLab/                # Original MATLAB reference scripts
-└── MatLab_Log/            # MATLAB output/reference files
+└── MatLab/                # Original MATLAB reference scripts and output/reference files
+    └── Results/           # MATLAB output/reference files
 ```
 
 ## Initial Setup
