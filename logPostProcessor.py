@@ -511,14 +511,15 @@ class LogVisualizer:
 
     def plot_advanced_id_iq_analysis(self):
         """
-        [고급 분석] Id/Iq 데이터를 통한 기어비, 토크맵, 주행전략 분석
-        1. Gear Ratio Check: RPM vs Id (약계자 진입 시점 확인)
-        2. Saturation Check: Iq vs Torque (자기 포화 확인)
-        3. Operating Point: Id vs Iq Circle (주행 전략 확인)
+        [Id-Iq Operating Point]
+        Id/Iq 운전점 분포로 전류 사용 방향과 주행 전략을 확인한다.
+
+        RPM vs Id, Iq vs Torque 분석은 각각 id-iq-vs-rpm,
+        torque-vs-iq 전용 그래프에서 확인한다.
         """
         # 데이터 존재 확인
-        if self.data.Idq_set is None or self.data.vel_set is None or self.data.torqueAct_set is None:
-            print("데이터 부족: Idq, Vel, TorqueAct가 모두 필요합니다.")
+        if self.data.Idq_set is None or self.data.vel_set is None:
+            print("데이터 부족: Idq, Vel 데이터가 필요합니다.")
             return
 
         # --- 1. 데이터 추출 및 동기화 ---
@@ -534,59 +535,30 @@ class LogVisualizer:
         id_sync = np.interp(t_ref, t_idq, id_raw)
         iq_sync = np.interp(t_ref, t_idq, iq_raw)
 
-        # Torque 동기화
-        t_trq = self.data.torqueAct_set[0, :]
-        trq_raw = self.data.torqueAct_set[1, :]
-        trq_sync = np.interp(t_ref, t_trq, trq_raw)
-
         # 노이즈 제거 (정차 중 데이터 제외)
-        mask = (np.abs(rpm) > 100) 
+        mask = (np.abs(rpm) > 100)
         rpm_m = rpm[mask]
         id_m = id_sync[mask]
         iq_m = iq_sync[mask]
-        trq_m = trq_sync[mask]
 
-        # --- 2. 그래프 그리기 (1x3 Layout) ---
-        fig, axs = plt.subplots(1, 3, figsize=(18, 6))
+        # --- 2. 그래프 그리기 ---
+        fig, ax = plt.subplots(figsize=(8, 7))
 
-        # [Graph 1] 기어비 분석: RPM vs Id (Flux Current)
-        # 목적: 약계자(Id < 0)가 너무 낮은 RPM에서 시작되는지 확인
-        axs[0].scatter(rpm_m, id_m, c='blue', s=3, alpha=0.3)
-        axs[0].axhline(0, color='k', linestyle='--', linewidth=1)
-        axs[0].set_xlabel('Motor Speed (RPM)')
-        axs[0].set_ylabel('Flux Current Id (A)')
-        axs[0].set_title('1. Gear Ratio Check\n(RPM vs Id)')
-        axs[0].grid(True)
-        # 가이드: Id가 음수로 떨어지는 RPM 지점이 "기저속도(Base Speed)"
-
-        # [Graph 2] 토크맵 효율: Iq vs Torque
-        # 목적: 전류를 퍼부어도 토크가 안 느는 "포화 구간" 확인
-        axs[1].scatter(iq_m, trq_m, c=np.abs(id_m), cmap='coolwarm', s=3, alpha=0.5)
-        axs[1].set_xlabel('Torque Current Iq (A)')
-        axs[1].set_ylabel('Actual Torque (Nm)')
-        axs[1].set_title('2. Saturation Check\n(Iq vs Torque)')
-        axs[1].grid(True)
-        # 색상(Color)은 Id 전류량 (빨갈수록 약계자 심함)
-        
-        # 기준선 (Ideal Kt Line, ME1616 approx 0.23)
-        x_ref = np.linspace(0, np.max(iq_m), 100)
-        axs[1].plot(x_ref, 0.23 * x_ref, 'g--', label='Linear Ref (Kt=0.23)')
-        axs[1].legend()
-
-        # [Graph 3] 주행 전략: Id vs Iq (Current Vector Trajectory)
+        # 주행 전략: Id vs Iq (Current Vector Trajectory)
         # 목적: 운전자가 전류원을 어떻게 쓰고 있는지 분포 확인
-        sc = axs[2].scatter(id_m, iq_m, c=rpm_m, cmap='viridis', s=3, alpha=0.5)
-        axs[2].set_xlabel('Flux Current Id (A)')
-        axs[2].set_ylabel('Torque Current Iq (A)')
-        axs[2].set_title('3. Driving Strategy\n(Current Vector Trajectory)')
-        axs[2].grid(True)
-        axs[2].axis('equal') # 원형 유지를 위해 비율 고정
-        
+        sc = ax.scatter(id_m, iq_m, c=rpm_m, cmap='viridis', s=3, alpha=0.5)
+        ax.set_xlabel('Flux Current Id (A)')
+        ax.set_ylabel('Torque Current Iq (A)')
+        ax.set_title('Driving Strategy\n(Current Vector Trajectory)')
+        ax.grid(True)
+        ax.axis('equal') # 원형 유지를 위해 비율 고정
+
         # 전류 제한원(Current Limit Circle) 가이드 (예: 400A)
         theta = np.linspace(0, np.pi, 100)
-        axs[2].plot(400*np.cos(theta), 400*np.sin(theta), 'r--', label='400A Limit')
-        
-        cbar = plt.colorbar(sc, ax=axs[2])
+        ax.plot(400*np.cos(theta), 400*np.sin(theta), 'r--', label='400A Limit')
+        ax.legend()
+
+        cbar = plt.colorbar(sc, ax=ax)
         cbar.set_label('Speed (RPM)')
 
         plt.tight_layout()

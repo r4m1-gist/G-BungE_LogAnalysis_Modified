@@ -85,11 +85,11 @@ Plots / Actions
 
   [Core / GPS]
    1. gps-only  # GPS 주행 궤적
-   2. gps-velocity-and-slip  # GPS 속도 slip ratio
+   2. gps-velocity-and-slip  # GPS 속도와 slip ratio
 
   [Torque / Motor Control]
-   6. torque-performance  # 토크 응답성 확인
-   7. vector-control  # 벡터 제어(Id/Iq) 상태 확인
+   6. torque-performance  # 토크 명령/실측/RPM
+   7. vector-control  # Id/Iq와 DC 링크 전압
 Select plot/action numbers (example: 1,4 or all): 1
 ```
 
@@ -169,6 +169,6 @@ visualizer.plot_torque_vs_iq(
 
 Tune these values depending on the log: sparse data usually needs wider bins or lower minimum sample counts; controller reference lines such as current limits should match the vehicle setup used for that run.
 
-The interactive action menu is grouped by analysis purpose to keep the function list readable after clearing the terminal. The selection numbers still refer to the full action list, so existing input styles such as `1,4`, `3-7`, and `all` still work.
+The interactive action menu is grouped by analysis purpose to keep the function list readable after clearing the terminal. Older overlapping analysis variants are kept in the visualizer code but hidden from the menu so the default list stays focused. Existing input styles such as `1,4`, `3-7`, and `all` still work.
 
 In summary, treat plotting parameters as part of the analysis configuration (in main), not as fixed logic inside the visualizer class.
