@@ -136,8 +136,8 @@ Absolute log paths are also supported. In non-interactive usage, pass at least o
 - Logs are expected under `Logs/<group name>/`.
 - New log file paths are selected with `--group` and `--log`.
 - If a driving session is split into multiple log files, pass them to `--log` in order.
-- Most arrays are preallocated with `NaN`, so analysis functions should filter valid data when needed.
-- Cooling and thermal regression plots are especially sensitive to `NaN` or sparse data, so defensive filtering is applied before fitting trends.
+- Unlike the original log analysis flow, the Python temperature and cooling analysis functions include defensive `NaN`/infinite-value filtering before interpolation or regression, preventing preallocated empty samples from affecting trend fits.
+- Cooling and thermal regression plots are especially sensitive to sparse data, so fitting is skipped when there are not enough valid samples.
 - `NaN` values usually mean that the signal was not available, not parsed, or not received at that timestamp. They are mainly useful for checking data coverage, CAN dropouts, or parser mapping issues, not as physical values.
 
 Plotting functions in the visualizer module often include assumptions and default constraints (e.g., current limits, bin widths, minimum samples per bin, field weakening thresholds). Treat those values as analysis configuration.
