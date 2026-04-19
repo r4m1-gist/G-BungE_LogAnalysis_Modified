@@ -41,7 +41,9 @@ python -m pip install -r requirements.txt
 
 ## CAN Data Mapping
 
-The parser currently focuses on MK4 CAN data.
+The parser is based on 2025 vehicle Mk.4 logs and currently focuses on MK4 CAN data.
+
+When adding new logs, place the `.log` files under `Logs/<group name>/`, then set `log_group` and `log_files` in `main.py` to match that folder name and file name.
 
 | Source | Key | Data |
 | --- | --- | --- |
@@ -58,5 +60,6 @@ The parser currently focuses on MK4 CAN data.
 ## Notes
 
 - Logs are expected under `Logs/<group name>/`.
+- New log file paths are selected from `main.py` through `log_group` and `log_files`.
 - If a driving session is split into multiple log files, add them to `log_files` in order.
 - Most arrays are preallocated with `NaN`, so analysis functions should filter valid data when needed.
