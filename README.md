@@ -1,5 +1,6 @@
 # G-BungE_LogAnalysis_Modified
-Based on GBungE_logger_python by quserunknownp, modified and extended.
+Based on `GBungE_logger_python` by quserunknownp.
+Modified and extended for GIST Baja/Formula EV team logger.
 
 GIST Student Baja/Formula team logger project. Based on luftaquila/monolith v1.  
 
