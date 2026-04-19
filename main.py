@@ -236,7 +236,7 @@ if __name__ == "__main__":
     저온(포화) 영역 데이터 배제 -> 진짜 냉각 성능(기울기) 확인
     '''
 
-    visualizer.plot_tn_curve_envelope() 
+    # visualizer.plot_tn_curve_envelope() 
     # T-N Curve Envelope (토크-속도 곡선 봉우리)
     '''
     대표 토크값은 상위 95%값 사용
@@ -253,3 +253,10 @@ if __name__ == "__main__":
 
     # visualizer.plot_torque_vs_iq(iq_bin_width=10.0, min_samples_per_bin=8, use_abs_iq=False)
     # 실제 토크와 Iq 관계 및 Torque/Iq 추세 확인
+
+    # visualizer.plot_motor_control_constraints(current_limit=200.0)
+    # Id-Iq operating point, 전류 제한원, MTPA, 전압 제한 타원 시각화
+    # MTPA/전압 타원은 ld, lq, psi_f, voltage_limit 값을 넣어야 정확히 표시됨
+
+    visualizer.plot_empirical_mtpa_from_log(current_limit=200.0, current_bin_width=10.0, min_samples_per_bin=3, rpm_max=1500.0)
+    # 모터 파라미터 없이 저속 로그에서 Torque/Current가 높은 Id-Iq 운전점 추세 확인
