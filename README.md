@@ -64,3 +64,5 @@ When adding new logs, place the `.log` files under `Logs/<group name>/`, then se
 - New log file paths are selected from `main.py` through `log_group` and `log_files`.
 - If a driving session is split into multiple log files, add them to `log_files` in order.
 - Most arrays are preallocated with `NaN`, so analysis functions should filter valid data when needed.
+- Cooling and thermal regression plots are especially sensitive to `NaN` or sparse data, so defensive filtering is applied before fitting trends.
+- `NaN` values usually mean that the signal was not available, not parsed, or not received at that timestamp. They are mainly useful for checking data coverage, CAN dropouts, or parser mapping issues, not as physical values.

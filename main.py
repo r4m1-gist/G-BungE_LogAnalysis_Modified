@@ -216,7 +216,7 @@ if __name__ == "__main__":
     - 추세선: 뉴턴의 냉각 법칙에 따른 냉각 계수(k) 추정
     '''
 
-    visualizer.plot_cooling_intercept()
+    # visualizer.plot_cooling_intercept()
     # [순수 냉각 구간 분석] Power vs Temp Slope (Low Power Only)
     '''
     - 조건: 전력 < 1kW (정차/탄력주행)

@@ -7,6 +7,36 @@ class LogVisualizer:
     def __init__(self, log_data):
         self.data = log_data
 
+    def _safe_polyfit(self, x, y, degree=1, min_points=None):
+        x = np.asarray(x, dtype=float)
+        y = np.asarray(y, dtype=float)
+        valid = np.isfinite(x) & np.isfinite(y)
+        x = x[valid]
+        y = y[valid]
+
+        if min_points is None:
+            min_points = degree + 1
+        if len(x) < min_points or np.ptp(x) <= 0:
+            return None
+
+        try:
+            return np.polyfit(x, y, degree)
+        except (np.linalg.LinAlgError, ValueError, FloatingPointError):
+            return None
+
+    def _safe_sample_rate(self, t):
+        t = np.asarray(t, dtype=float)
+        t = t[np.isfinite(t)]
+        if len(t) < 2:
+            return None
+
+        dt = np.diff(np.sort(t))
+        dt = dt[np.isfinite(dt) & (dt > 0)]
+        if len(dt) == 0:
+            return None
+
+        return 1.0 / np.median(dt)
+
     def plot_gps_only(self):
         """기본 GPS 주행 궤적 그리기 (Path Only)"""
         
@@ -1344,8 +1374,13 @@ class LogVisualizer:
         i_sync = np.interp(t_v, t_i, i_batt)
         temp_sync = np.interp(t_v, t_temp, temp_val)
 
-        # NaN 제거
-        mask = ~np.isnan(v_cap) & ~np.isnan(i_sync) & ~np.isnan(temp_sync)
+        # NaN/inf 제거
+        mask = (
+            np.isfinite(t_v) &
+            np.isfinite(v_cap) &
+            np.isfinite(i_sync) &
+            np.isfinite(temp_sync)
+        )
         t_v = t_v[mask]
         v_cap = v_cap[mask]
         i_sync = i_sync[mask]
@@ -1353,12 +1388,27 @@ class LogVisualizer:
         
         if len(t_v) == 0: return
 
+        sort_idx = np.argsort(t_v)
+        t_v = t_v[sort_idx]
+        v_cap = v_cap[sort_idx]
+        i_sync = i_sync[sort_idx]
+        temp_sync = temp_sync[sort_idx]
+
+        unique_time = np.concatenate(([True], np.diff(t_v) > 0))
+        t_v = t_v[unique_time]
+        v_cap = v_cap[unique_time]
+        i_sync = i_sync[unique_time]
+        temp_sync = temp_sync[unique_time]
+
         # 전력 계산 (kW)
         power_kw = (v_cap * i_sync) / 1000.0
 
         # 3. 슬라이딩 윈도우 & 선형 회귀 (핵심 로직)
         # 샘플링 주파수
-        fs = 1.0 / np.mean(np.diff(t_v))
+        fs = self._safe_sample_rate(t_v)
+        if fs is None:
+            print("유효한 시간 간격이 없어 온도 기울기 분석을 수행할 수 없습니다.")
+            return
         window_len = int(window_sec * fs)
         
         if window_len < 2: window_len = 2
@@ -1382,18 +1432,28 @@ class LogVisualizer:
             # [핵심] 1차 함수(선형) 피팅 -> 기울기(Slope) 추출
             # deg=1 : y = ax + b 에서 a(기울기)를 구함
             # 결과: slope (degC/sec)
-            fit = np.polyfit(t_chunk, temp_chunk, 1)
+            fit = self._safe_polyfit(t_chunk, temp_chunk, 1, min_points=3)
+            if fit is None:
+                continue
             slope = fit[0] 
             
             # 데이터 저장
             slopes.append(slope)
-            avg_powers.append(np.mean(power_chunk))
-            avg_temps.append(np.mean(temp_chunk))
+            avg_powers.append(np.nanmean(power_chunk))
+            avg_temps.append(np.nanmean(temp_chunk))
 
         # 배열 변환
         slopes = np.array(slopes)
         avg_powers = np.array(avg_powers)
         avg_temps = np.array(avg_temps)
+
+        valid_result = np.isfinite(slopes) & np.isfinite(avg_powers) & np.isfinite(avg_temps)
+        slopes = slopes[valid_result]
+        avg_powers = avg_powers[valid_result]
+        avg_temps = avg_temps[valid_result]
+        if len(slopes) == 0:
+            print("회귀 가능한 온도 기울기 구간이 없습니다.")
+            return
 
         # 4. 그래프 그리기
         plt.figure(figsize=(11, 9))
@@ -1411,10 +1471,11 @@ class LogVisualizer:
         # 추세선 (데이터 전체의 경향성)
         # X(기울기)와 Y(전력) 사이의 관계를 보여주는 선
         if len(x_axis) > 1:
-            trend = np.polyfit(x_axis, avg_powers, 1)
-            trend_fn = np.poly1d(trend)
-            x_range = np.linspace(min(x_axis), max(x_axis), 100)
-            plt.plot(x_range, trend_fn(x_range), 'b:', linewidth=2, label='Trend Line')
+            trend = self._safe_polyfit(x_axis, avg_powers, 1, min_points=3)
+            if trend is not None:
+                trend_fn = np.poly1d(trend)
+                x_range = np.linspace(min(x_axis), max(x_axis), 100)
+                plt.plot(x_range, trend_fn(x_range), 'b:', linewidth=2, label='Trend Line')
 
         # 꾸미기
         cbar = plt.colorbar(sc)
@@ -1427,8 +1488,9 @@ class LogVisualizer:
         plt.legend()
         
         # [분석 팁] 텍스트
-        plt.text(max(x_axis)*0.6, max(avg_powers)*0.1, "Heating (Insufficient Cooling)", color='red')
-        plt.text(min(x_axis)*0.6, max(avg_powers)*0.1, "Cooling (Sufficient)", color='blue')
+        if len(x_axis) > 0 and len(avg_powers) > 0:
+            plt.text(max(x_axis)*0.6, max(avg_powers)*0.1, "Heating (Insufficient Cooling)", color='red')
+            plt.text(min(x_axis)*0.6, max(avg_powers)*0.1, "Cooling (Sufficient)", color='blue')
 
         plt.tight_layout()
         plt.show()
@@ -1578,23 +1640,42 @@ class LogVisualizer:
         # (NaN이 포함되어 있어도 계산 후 마스킹으로 처리)
         power_kw_raw = (v_cap * i_sync) / 1000.0
 
-        # 3. [핵심] 데이터 필터링 (Power >= 2.5kW & NaN 제거)
+        # 3. [핵심] 데이터 필터링 (Power >= 2.5kW & NaN/inf 제거)
         # 피트인/대기 구간(2.5kW 미만) 삭제
-        mask = (~np.isnan(v_cap) & ~np.isnan(i_sync) & ~np.isnan(temp_sync)) & \
-               (power_kw_raw >= min_power_kw)
+        mask = (
+            np.isfinite(t_v) &
+            np.isfinite(v_cap) &
+            np.isfinite(i_sync) &
+            np.isfinite(temp_sync) &
+            np.isfinite(power_kw_raw) &
+            (power_kw_raw >= min_power_kw)
+        )
         
         t_v = t_v[mask]
         v_cap = v_cap[mask]
         i_sync = i_sync[mask]
         temp_sync = temp_sync[mask]
         power_kw = power_kw_raw[mask]
+
+        sort_idx = np.argsort(t_v)
+        t_v = t_v[sort_idx]
+        temp_sync = temp_sync[sort_idx]
+        power_kw = power_kw[sort_idx]
+
+        unique_time = np.concatenate(([True], np.diff(t_v) > 0))
+        t_v = t_v[unique_time]
+        temp_sync = temp_sync[unique_time]
+        power_kw = power_kw[unique_time]
         
         if len(t_v) < 10:
             print(f"조건을 만족하는 데이터가 너무 적습니다. (Min Power: {min_power_kw}kW)")
             return
 
         # 4. 슬라이딩 윈도우 & 선형 회귀
-        fs = 1.0 / np.mean(np.diff(t_v))
+        fs = self._safe_sample_rate(t_v)
+        if fs is None:
+            print("유효한 시간 간격이 없어 부하 열경로 분석을 수행할 수 없습니다.")
+            return
         window_len = int(window_sec * fs)
         if window_len < 2: window_len = 2
         
@@ -1616,16 +1697,27 @@ class LogVisualizer:
             temp_chunk = temp_sync[i : i + window_len]
             power_chunk = power_kw[i : i + window_len]
             
-            fit = np.polyfit(t_chunk, temp_chunk, 1)
+            fit = self._safe_polyfit(t_chunk, temp_chunk, 1, min_points=3)
+            if fit is None:
+                continue
             
             slopes.append(fit[0] * 10.0) # 10초당 변화율
-            avg_powers.append(np.mean(power_chunk))
-            avg_temps.append(np.mean(temp_chunk))
+            avg_powers.append(np.nanmean(power_chunk))
+            avg_temps.append(np.nanmean(temp_chunk))
 
         # 5. 선 그리기
         x = np.array(slopes)
         y = np.array(avg_powers)
         z = np.array(avg_temps)
+
+        valid_result = np.isfinite(x) & np.isfinite(y) & np.isfinite(z)
+        x = x[valid_result]
+        y = y[valid_result]
+        z = z[valid_result]
+
+        if len(x) < 2:
+            print("회귀 가능한 부하 열경로 구간이 부족합니다.")
+            return
 
         points = np.array([x, y]).T.reshape(-1, 1, 2)
         segments = np.concatenate([points[:-1], points[1:]], axis=1)
@@ -1649,17 +1741,18 @@ class LogVisualizer:
         
         # 추세선 (Trend Line)
         if len(x) > 1:
-            trend = np.polyfit(x, y, 1)
+            trend = self._safe_polyfit(x, y, 1, min_points=3)
             
-            x_range = np.linspace(x.min(), x.max(), 100)
-            y_trend = np.poly1d(trend)(x_range)
-            
-            ax.plot(x_range, y_trend, 'b:', linewidth=3, label=f'High Load Trend (>{min_power_kw}kW)')
-            
-            # Y절편(냉각 한계) 표시
-            y_intercept = np.poly1d(trend)(0)
-            ax.plot(0, y_intercept, 'rx', markersize=12, markeredgewidth=3)
-            ax.text(0.1, y_intercept, f' Limit: {y_intercept:.1f}kW', color='red', fontweight='bold', fontsize=12)
+            if trend is not None:
+                x_range = np.linspace(x.min(), x.max(), 100)
+                y_trend = np.poly1d(trend)(x_range)
+                
+                ax.plot(x_range, y_trend, 'b:', linewidth=3, label=f'High Load Trend (>{min_power_kw}kW)')
+                
+                # Y절편(냉각 한계) 표시
+                y_intercept = np.poly1d(trend)(0)
+                ax.plot(0, y_intercept, 'rx', markersize=12, markeredgewidth=3)
+                ax.text(0.1, y_intercept, f' Limit: {y_intercept:.1f}kW', color='red', fontweight='bold', fontsize=12)
 
         cbar = fig.colorbar(line, ax=ax)
         cbar.set_label('Motor Temperature (°C)')
@@ -1698,20 +1791,39 @@ class LogVisualizer:
         # 전력 계산 (kW)
         power_kw_raw = (v_cap * i_sync) / 1000.0
 
-        # 3. 필터링 (2.5kW 이상 & NaN 제거)
-        mask = (~np.isnan(v_cap) & ~np.isnan(i_sync) & ~np.isnan(temp_sync)) & \
-               (power_kw_raw >= min_power_kw)
+        # 3. 필터링 (2.5kW 이상 & NaN/inf 제거)
+        mask = (
+            np.isfinite(t_v) &
+            np.isfinite(v_cap) &
+            np.isfinite(i_sync) &
+            np.isfinite(temp_sync) &
+            np.isfinite(power_kw_raw) &
+            (power_kw_raw >= min_power_kw)
+        )
         
         t_v = t_v[mask]
         temp_sync = temp_sync[mask]
         power_kw = power_kw_raw[mask]
+
+        sort_idx = np.argsort(t_v)
+        t_v = t_v[sort_idx]
+        temp_sync = temp_sync[sort_idx]
+        power_kw = power_kw[sort_idx]
+
+        unique_time = np.concatenate(([True], np.diff(t_v) > 0))
+        t_v = t_v[unique_time]
+        temp_sync = temp_sync[unique_time]
+        power_kw = power_kw[unique_time]
         
         if len(t_v) < 10:
             print("조건을 만족하는 데이터가 부족합니다.")
             return
 
         # 4. 슬라이딩 윈도우 회귀
-        fs = 1.0 / np.mean(np.diff(t_v))
+        fs = self._safe_sample_rate(t_v)
+        if fs is None:
+            print("유효한 시간 간격이 없어 전력-온도기울기 분석을 수행할 수 없습니다.")
+            return
         window_len = int(window_sec * fs)
         if window_len < 2: window_len = 2
         step = max(1, int(fs * 0.5))
@@ -1732,16 +1844,27 @@ class LogVisualizer:
             power_chunk = power_kw[i : i + window_len]
             
             # 선형 회귀 (기울기 추출)
-            fit = np.polyfit(t_chunk, temp_chunk, 1)
+            fit = self._safe_polyfit(t_chunk, temp_chunk, 1, min_points=3)
+            if fit is None:
+                continue
             
             slopes.append(fit[0] * 10.0) # 10초당 온도 변화
-            avg_powers.append(np.mean(power_chunk))
-            avg_temps.append(np.mean(temp_chunk))
+            avg_powers.append(np.nanmean(power_chunk))
+            avg_temps.append(np.nanmean(temp_chunk))
 
         # 5. 그래프 그리기
         x = np.array(slopes)
         y = np.array(avg_powers)
         c = np.array(avg_temps)
+
+        valid_result = np.isfinite(x) & np.isfinite(y) & np.isfinite(c)
+        x = x[valid_result]
+        y = y[valid_result]
+        c = c[valid_result]
+
+        if len(x) == 0:
+            print("회귀 가능한 전력-온도기울기 구간이 없습니다.")
+            return
 
         plt.figure(figsize=(12, 10))
         
@@ -1753,18 +1876,19 @@ class LogVisualizer:
 
         # 추세선 (Trend Line)
         if len(x) > 1:
-            trend = np.polyfit(x, y, 1)
-            x_range = np.linspace(x.min(), x.max(), 100)
-            y_trend = np.poly1d(trend)(x_range)
-            
-            plt.plot(x_range, y_trend, 'b:', linewidth=3, label='Cooling Performance Trend')
-            
-            # Y절편 (냉각 한계 전력)
-            limit_kw = np.poly1d(trend)(0)
-            
-            plt.plot(0, limit_kw, 'rx', markersize=15, markeredgewidth=3)
-            plt.text(0.2, limit_kw, f' Continuous Limit:\n {limit_kw:.1f} kW', 
-                     color='red', fontweight='bold', fontsize=14, verticalalignment='center')
+            trend = self._safe_polyfit(x, y, 1, min_points=3)
+            if trend is not None:
+                x_range = np.linspace(x.min(), x.max(), 100)
+                y_trend = np.poly1d(trend)(x_range)
+                
+                plt.plot(x_range, y_trend, 'b:', linewidth=3, label='Cooling Performance Trend')
+                
+                # Y절편 (냉각 한계 전력)
+                limit_kw = np.poly1d(trend)(0)
+                
+                plt.plot(0, limit_kw, 'rx', markersize=15, markeredgewidth=3)
+                plt.text(0.2, limit_kw, f' Continuous Limit:\n {limit_kw:.1f} kW', 
+                         color='red', fontweight='bold', fontsize=14, verticalalignment='center')
 
         cbar = plt.colorbar(sc)
         cbar.set_label('Motor Temperature (°C)')
@@ -1801,19 +1925,36 @@ class LogVisualizer:
         temp_sync = np.interp(t_v, t_temp, temp_val)
         power_kw = (v_cap * i_sync) / 1000.0
 
-        # 2. 필터링 (Power < 1kW & NaN 제거)
-        mask = (~np.isnan(v_cap) & ~np.isnan(i_sync) & ~np.isnan(temp_sync)) & \
-               (power_kw < max_power_kw)
+        # 2. 필터링 (Power < 1kW & NaN/inf 제거)
+        mask = (
+            np.isfinite(t_v) &
+            np.isfinite(v_cap) &
+            np.isfinite(i_sync) &
+            np.isfinite(temp_sync) &
+            np.isfinite(power_kw) &
+            (power_kw < max_power_kw)
+        )
         
         t_v = t_v[mask]
         temp_sync = temp_sync[mask]
+
+        sort_idx = np.argsort(t_v)
+        t_v = t_v[sort_idx]
+        temp_sync = temp_sync[sort_idx]
+
+        unique_time = np.concatenate(([True], np.diff(t_v) > 0))
+        t_v = t_v[unique_time]
+        temp_sync = temp_sync[unique_time]
         
         if len(t_v) < 10:
             print("냉각 분석을 위한 저부하 데이터가 부족합니다.")
             return
 
         # 3. 슬라이딩 윈도우 & 기울기 계산
-        fs = 1.0 / np.mean(np.diff(t_v))
+        fs = self._safe_sample_rate(t_v)
+        if fs is None:
+            print("유효한 시간 간격이 없어 냉각 추세 분석을 수행할 수 없습니다.")
+            return
         window_len = int(window_sec * fs)
         if window_len < 2: window_len = 2
         step = max(1, int(fs * 0.5))
@@ -1831,14 +1972,23 @@ class LogVisualizer:
             temp_chunk = temp_sync[i : i + window_len]
             
             # 선형 회귀로 '순간 기울기' 추출
-            fit = np.polyfit(t_chunk, temp_chunk, 1)
+            fit = self._safe_polyfit(t_chunk, temp_chunk, 1, min_points=3)
+            if fit is None:
+                continue
             
             slopes.append(fit[0] * 10.0) # 10초당 변화율
-            avg_temps.append(np.mean(temp_chunk))
+            avg_temps.append(np.nanmean(temp_chunk))
 
         # 4. 그래프 그리기
         x = np.array(avg_temps) # 온도
         y = np.array(slopes)    # 속도
+
+        valid_result = np.isfinite(x) & np.isfinite(y)
+        x = x[valid_result]
+        y = y[valid_result]
+        if len(x) == 0:
+            print("회귀 가능한 냉각 추세 구간이 없습니다.")
+            return
 
         plt.figure(figsize=(11, 9))
         
@@ -1852,21 +2002,22 @@ class LogVisualizer:
         if len(x) > 1:
             # 1차 함수 피팅 (y = ax + b)
             # a (기울기)가 가파를수록 고온에서 냉각 효율이 좋다는 뜻
-            trend = np.polyfit(x, y, 1)
-            trend_fn = np.poly1d(trend)
-            
-            x_range = np.linspace(x.min(), x.max(), 100)
-            
-            # 파란색 점선으로 추세선 표시
-            plt.plot(x_range, trend_fn(x_range), 'r:', linewidth=3, label='Cooling Performance Trend')
-            
-            # 성능 지표 (기울기) 텍스트 표시
-            cooling_coeff = trend[0]
-            # y값(속도)이 음수이므로, 기울기가 음수여야 정상 (온도가 높을수록 더 빨리 식음 -> y가 더 작아짐)
-            
-            plt.text(x.min(), trend_fn(x.min()), 
-                     f' Cooling Coefficient: {cooling_coeff:.3f}\n (Steeper is Better)', 
-                     color='red', fontweight='bold', fontsize=12, verticalalignment='bottom')
+            trend = self._safe_polyfit(x, y, 1, min_points=3)
+            if trend is not None:
+                trend_fn = np.poly1d(trend)
+                
+                x_range = np.linspace(x.min(), x.max(), 100)
+                
+                # 파란색 점선으로 추세선 표시
+                plt.plot(x_range, trend_fn(x_range), 'r:', linewidth=3, label='Cooling Performance Trend')
+                
+                # 성능 지표 (기울기) 텍스트 표시
+                cooling_coeff = trend[0]
+                # y값(속도)이 음수이므로, 기울기가 음수여야 정상 (온도가 높을수록 더 빨리 식음 -> y가 더 작아짐)
+                
+                plt.text(x.min(), trend_fn(x.min()), 
+                         f' Cooling Coefficient: {cooling_coeff:.3f}\n (Steeper is Better)', 
+                         color='red', fontweight='bold', fontsize=12, verticalalignment='bottom')
 
         plt.title(f'Passive Cooling Performance: Temp vs Cooling Rate\n(Filtered: Power < {max_power_kw}kW)')
         plt.xlabel('Current Motor Temperature (°C)')
@@ -2066,16 +2217,35 @@ class LogVisualizer:
         temp_sync = np.interp(t_v, t_temp, temp_val)
         power_kw_raw = (v_cap * i_sync) / 1000.0
 
-        # NaN 제거
-        mask = ~np.isnan(v_cap) & ~np.isnan(i_sync) & ~np.isnan(temp_sync)
+        # NaN/inf 제거
+        mask = (
+            np.isfinite(t_v) &
+            np.isfinite(v_cap) &
+            np.isfinite(i_sync) &
+            np.isfinite(temp_sync) &
+            np.isfinite(power_kw_raw)
+        )
         t_v = t_v[mask]
         temp_sync = temp_sync[mask]
         power_kw = power_kw_raw[mask]
 
         if len(t_v) == 0: return
 
+        sort_idx = np.argsort(t_v)
+        t_v = t_v[sort_idx]
+        temp_sync = temp_sync[sort_idx]
+        power_kw = power_kw[sort_idx]
+
+        unique_time = np.concatenate(([True], np.diff(t_v) > 0))
+        t_v = t_v[unique_time]
+        temp_sync = temp_sync[unique_time]
+        power_kw = power_kw[unique_time]
+
         # 2. 샘플링 정보
-        fs = 1.0 / np.mean(np.diff(t_v))
+        fs = self._safe_sample_rate(t_v)
+        if fs is None:
+            print("유효한 시간 간격이 없어 thermal lag 분석을 수행할 수 없습니다.")
+            return
         window_len = int(window_sec * fs)
         if window_len < 2: window_len = 2
         
@@ -2109,10 +2279,10 @@ class LogVisualizer:
 
                 # 전력: 현재 시점 (원인)
                 power_chunk = power_kw[i : i + window_len]
-                avg_p = np.mean(power_chunk)
+                avg_p = np.nanmean(power_chunk)
                 
                 # 필터링 (저부하 제외)
-                if avg_p < min_power_kw: continue
+                if not np.isfinite(avg_p) or avg_p < min_power_kw: continue
 
                 # 온도: Lag만큼 뒤의 시점 (결과)
                 idx_temp_start = i + lag_idx
@@ -2120,12 +2290,14 @@ class LogVisualizer:
                 temp_chunk = temp_sync[idx_temp_start : idx_temp_start + window_len]
                 
                 # 온도 기울기 계산
-                fit = np.polyfit(t_chunk_temp, temp_chunk, 1)
+                fit = self._safe_polyfit(t_chunk_temp, temp_chunk, 1, min_points=3)
+                if fit is None:
+                    continue
                 slope = fit[0] * 10.0 # 10초당 변화율
 
                 curr_slopes.append(slope)
                 curr_powers.append(avg_p)
-                curr_temps.append(np.mean(temp_chunk))
+                curr_temps.append(np.nanmean(temp_chunk))
 
             # 상관계수(R^2) 계산
             if len(curr_slopes) > 10:
@@ -2133,7 +2305,10 @@ class LogVisualizer:
                 y = np.array(curr_powers)                # Y: 전력
                 
                 # 단순 선형회귀 피팅 후 점수 계산
-                model_fit = np.polyfit(curr_slopes, curr_powers, 1)
+                model_fit = self._safe_polyfit(curr_slopes, curr_powers, 1, min_points=3)
+                if model_fit is None:
+                    correlations.append(0)
+                    continue
                 model_fn = np.poly1d(model_fit)
                 y_pred = model_fn(curr_slopes)
                 
@@ -2171,20 +2346,32 @@ class LogVisualizer:
         x = np.array(best_slopes)
         y = np.array(best_powers)
         c = np.array(best_temps)
+
+        valid_best = np.isfinite(x) & np.isfinite(y) & np.isfinite(c)
+        x = x[valid_best]
+        y = y[valid_best]
+        c = c[valid_best]
+
+        if len(x) == 0:
+            print("최적 lag에서 회귀 가능한 데이터가 없습니다.")
+            plt.tight_layout()
+            plt.show()
+            return
         
         sc = ax2.scatter(x, y, c=c, cmap='magma', s=20, alpha=0.6)
         
         # 추세선
         if len(x) > 1:
-            trend = np.polyfit(x, y, 1)
-            x_range = np.linspace(x.min(), x.max(), 100)
-            ax2.plot(x_range, np.poly1d(trend)(x_range), 'b:', linewidth=3, 
-                     label=f'Optimized Trend (Lag={best_lag}s)')
-            
-            # Y절편 (한계 전력)
-            limit_kw = np.poly1d(trend)(0)
-            ax2.plot(0, limit_kw, 'rx', markersize=15, markeredgewidth=3)
-            ax2.text(0.1, limit_kw, f' Limit: {limit_kw:.1f} kW', color='red', fontweight='bold')
+            trend = self._safe_polyfit(x, y, 1, min_points=3)
+            if trend is not None:
+                x_range = np.linspace(x.min(), x.max(), 100)
+                ax2.plot(x_range, np.poly1d(trend)(x_range), 'b:', linewidth=3, 
+                         label=f'Optimized Trend (Lag={best_lag}s)')
+                
+                # Y절편 (한계 전력)
+                limit_kw = np.poly1d(trend)(0)
+                ax2.plot(0, limit_kw, 'rx', markersize=15, markeredgewidth=3)
+                ax2.text(0.1, limit_kw, f' Limit: {limit_kw:.1f} kW', color='red', fontweight='bold')
 
         ax2.axvline(0, color='k', linestyle='--')
         ax2.set_xlabel('Temperature Slope (°C / 10s)')
