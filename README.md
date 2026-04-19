@@ -49,42 +49,62 @@ When adding new logs, place the `.log` files under `Logs/<group name>/`, then pa
 
 ## CLI Usage
 
-Start an interactive menu for choosing a group, log files, and plots:
+Run the interactive menu:
 
 ```bash
-python3 main.py
+./main.py
 ```
+
+The script shows numbered menus. Type the number you want and press Enter:
+
+```text
+Log Groups
+   1. 2nd Test Week
+   2. Main Competition
+Select one group number [default: 1]: 1
+
+Logs in 2nd Test Week
+  15. 2025-08-17 05-31-36.log  # Iq/Id 파악 가능, Laps: 1/2/1
+  16. 2025-08-17 05-44-54.log  # Iq/Id 파악 가능, Laps: 1/0/0
+Select log numbers (example: 1,3-5 or all): 15
+
+Plots / Actions
+   1. gps-only  # GPS 주행 궤적
+   2. torque-performance  # 토크 응답성 확인
+   3. vector-control  # 벡터 제어(Id/Iq) 상태 확인
+Select plot/action numbers (example: 1,4 or all): 1
+```
+
+You can enter one number like `1`, multiple values like `1,3,5`, ranges like `3-7`, or `all`.
 
 You can also force the menu explicitly:
 
 ```bash
-python3 main.py --interactive
+./main.py --interactive
 ```
-
-In the menu, enter numbers like `1`, multiple values like `1,3,5`, ranges like `3-7`, or `all`.
 
 List available log groups and files:
 
 ```bash
-python3 main.py --list-logs
+./main.py --list-logs
 ```
 
 List available plot/action names:
 
 ```bash
-python3 main.py --list-plots
+./main.py --list-plots
 ```
 
 Run one plot against one log:
 
 ```bash
-python3 main.py --group "2nd Test Week" --log "2025-08-17 05-31-36.log" --plot gps-only
+./main.py --group "2nd Test Week" --log "2025-08-17 05-31-36.log" --plot gps-only
 ```
 
 Run multiple split-session logs in order:
 
 ```bash
-python3 main.py \
+./main.py \
   --group "2nd Test Week" \
   --log "2025-08-17 05-31-36.log" "2025-08-17 05-44-54.log" \
   --plot torque-performance \
