@@ -1903,19 +1903,41 @@ class LogVisualizer:
         power_kw_raw = (v_cap * i_sync) / 1000.0
 
         # 2. [핵심] 1kW 이상 데이터 제외 (High Power Filter Out)
-        mask = (~np.isnan(v_cap) & ~np.isnan(i_sync) & ~np.isnan(temp_sync)) & \
-               (power_kw_raw < max_power_kw)
+        mask = (
+            np.isfinite(t_v) &
+            np.isfinite(v_cap) &
+            np.isfinite(i_sync) &
+            np.isfinite(temp_sync) &
+            np.isfinite(power_kw_raw) &
+            (power_kw_raw < max_power_kw)
+        )
         
         t_v = t_v[mask]
         temp_sync = temp_sync[mask]
         power_kw = power_kw_raw[mask]
+
+        sort_idx = np.argsort(t_v)
+        t_v = t_v[sort_idx]
+        temp_sync = temp_sync[sort_idx]
+        power_kw = power_kw[sort_idx]
+
+        unique_time = np.concatenate(([True], np.diff(t_v) > 0))
+        t_v = t_v[unique_time]
+        temp_sync = temp_sync[unique_time]
+        power_kw = power_kw[unique_time]
         
         if len(t_v) < 10:
             print(f"조건을 만족하는 저부하 데이터가 부족합니다. (Max Power: {max_power_kw}kW)")
             return
 
         # 3. 슬라이딩 윈도우 회귀
-        fs = 1.0 / np.mean(np.diff(t_v))
+        dt = np.diff(t_v)
+        dt = dt[np.isfinite(dt) & (dt > 0)]
+        if len(dt) == 0:
+            print("유효한 시간 간격이 없어 냉각 분석을 수행할 수 없습니다.")
+            return
+
+        fs = 1.0 / np.median(dt)
         window_len = int(window_sec * fs)
         if window_len < 2: window_len = 2
         step = max(1, int(fs * 0.5))
@@ -1933,8 +1955,23 @@ class LogVisualizer:
             t_chunk = t_v[i : i + window_len]
             temp_chunk = temp_sync[i : i + window_len]
             power_chunk = power_kw[i : i + window_len]
+
+            chunk_valid = (
+                np.isfinite(t_chunk) &
+                np.isfinite(temp_chunk) &
+                np.isfinite(power_chunk)
+            )
+            t_chunk = t_chunk[chunk_valid]
+            temp_chunk = temp_chunk[chunk_valid]
+            power_chunk = power_chunk[chunk_valid]
+
+            if len(t_chunk) < 3 or np.ptp(t_chunk) <= 0:
+                continue
             
-            fit = np.polyfit(t_chunk, temp_chunk, 1)
+            try:
+                fit = np.polyfit(t_chunk, temp_chunk, 1)
+            except np.linalg.LinAlgError:
+                continue
             
             slopes.append(fit[0] * 10.0) # 10초당 변화율
             avg_powers.append(np.mean(power_chunk))
@@ -1944,6 +1981,15 @@ class LogVisualizer:
         x = np.array(slopes)
         y = np.array(avg_powers)
         c = np.array(avg_temps)
+
+        valid_fit = np.isfinite(x) & np.isfinite(y) & np.isfinite(c)
+        x = x[valid_fit]
+        y = y[valid_fit]
+        c = c[valid_fit]
+
+        if len(x) < 2:
+            print("회귀 가능한 냉각 구간이 부족합니다. max_power_kw 또는 window_sec를 조정하세요.")
+            return
 
         plt.figure(figsize=(12, 10))
         
@@ -1955,24 +2001,31 @@ class LogVisualizer:
         plt.axhline(0, color='k', linestyle='-', linewidth=1) # Y=0 바닥선
 
         # 추세선 및 X절편 계산
-        if len(x) > 1:
-            trend = np.polyfit(x, y, 1) # y = ax + b
+        if len(x) > 1 and np.ptp(x) > 0:
+            try:
+                trend = np.polyfit(x, y, 1) # y = ax + b
+            except np.linalg.LinAlgError:
+                print("추세선 계산 실패: 데이터 분산이 부족하거나 수치적으로 불안정합니다.")
+                trend = None
             
             # X절편 구하기 (y=0일 때 x값) => x = -b / a
-            slope_a, intercept_b = trend
-            if slope_a != 0:
-                x_intercept = -intercept_b / slope_a
-            else:
-                x_intercept = 0
-            
-            # 추세선 그리기
-            x_range = np.linspace(min(x.min(), x_intercept-0.5), max(x.max(), 0.5), 100)
-            plt.plot(x_range, np.poly1d(trend)(x_range), 'b--', linewidth=2, label='Cooling Trend')
-            
-            # X절편 표시 (Natural Cooling Rate)
-            plt.plot(x_intercept, 0, 'bx', markersize=15, markeredgewidth=3)
-            plt.text(x_intercept, 0.1, f' Natural Cooling:\n {x_intercept:.2f} °C/10s', 
-                     color='blue', fontweight='bold', fontsize=12, horizontalalignment='center')
+            if trend is not None:
+                slope_a, intercept_b = trend
+                if slope_a != 0:
+                    x_intercept = -intercept_b / slope_a
+                else:
+                    x_intercept = 0
+                
+                # 추세선 그리기
+                x_range = np.linspace(min(x.min(), x_intercept-0.5), max(x.max(), 0.5), 100)
+                plt.plot(x_range, np.poly1d(trend)(x_range), 'b--', linewidth=2, label='Cooling Trend')
+                
+                # X절편 표시 (Natural Cooling Rate)
+                plt.plot(x_intercept, 0, 'bx', markersize=15, markeredgewidth=3)
+                plt.text(x_intercept, 0.1, f' Natural Cooling:\n {x_intercept:.2f} °C/10s', 
+                         color='blue', fontweight='bold', fontsize=12, horizontalalignment='center')
+        else:
+            print("온도 기울기 데이터의 변화폭이 부족하여 추세선을 생략합니다.")
 
         cbar = plt.colorbar(sc)
         cbar.set_label('Motor Temperature (°C)')
