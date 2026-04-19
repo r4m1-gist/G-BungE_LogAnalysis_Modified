@@ -72,7 +72,9 @@ log_data = VehicleLog()
 # - 'Main Competition'
 log_group = '2nd Test Week'
 log_files = [
-    '2025-08-17 05-31-36.log',  
+    '2025-08-17 05-31-36.log',
+    '2025-08-17 05-44-54.log',
+    '2025-08-17 00-33-28.log',
 ]
 
 # 이어지는 데이터는 같은 리스트에 순서대로 넣을 것.
@@ -245,10 +247,20 @@ if __name__ == "__main__":
 
     # visualizer.plot_power_vs_rpm()
 
+    # ================= Torque Map Validation Set =================
+    # 작년 토크맵 세팅 문제와 약계자 제어 경향을 같이 확인할 때 아래 묶음을 순서대로 켜면 됨.
+    # visualizer.plot_tn_curve_envelope()
+    # visualizer.plot_torque_vs_iq(iq_bin_width=10.0, min_samples_per_bin=8, use_abs_iq=False)
+    # visualizer.plot_id_iq_vs_rpm(rpm_bin_width=100.0, min_samples_per_bin=10)
+    # visualizer.plot_auto_field_weakening_trend(fw_current_limit=150.0, rpm_bin_width=100.0, min_samples_per_bin=10)
+    # visualizer.plot_motor_control_constraints(current_limit=200.0)
+    # visualizer.plot_empirical_mtpa_from_log(current_limit=200.0, current_bin_width=10.0, min_samples_per_bin=3, rpm_max=1500.0)
+    # =============================================================
+
     # visualizer.plot_id_iq_vs_rpm(rpm_bin_width=100.0, min_samples_per_bin=10)
     # RPM 기준 Id/Iq 전류 추세 확인
 
-    # visualizer.plot_auto_field_weakening_trend(fw_current_limit=100.0, rpm_bin_width=100.0, min_samples_per_bin=10)
+    # visualizer.plot_auto_field_weakening_trend(fw_current_limit=150.0, rpm_bin_width=100.0, min_samples_per_bin=10)
     # 약계자 max current 설정값 예시를 넣고, 컨트롤러가 자동 분배한 Id/Iq operating point 확인
 
     # visualizer.plot_torque_vs_iq(iq_bin_width=10.0, min_samples_per_bin=8, use_abs_iq=False)

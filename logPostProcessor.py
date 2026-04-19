@@ -3094,15 +3094,21 @@ class LogVisualizer:
         else:
             rpm_sync = np.full_like(t_dq, np.nan, dtype=float)
 
-        valid = (
+        drive_region = (
             np.isfinite(iq_curr) &
             np.isfinite(id_curr) &
             np.isfinite(torque_sync) &
+            np.isfinite(rpm_sync) &
+            (torque_sync >= 0) &
+            (iq_curr > 0) &
+            (rpm_sync > 0) &
             (np.abs(iq_curr) >= min_abs_iq) &
             (iq_curr > -1000) & (iq_curr < 1000) &
             (id_curr > -1000) & (id_curr < 1000) &
             (torque_sync > -100) & (torque_sync < 300)
         )
+        removed_negative_torque = np.sum(np.isfinite(torque_sync) & (torque_sync < 0))
+        valid = drive_region
 
         iq_curr = iq_curr[valid]
         id_curr = id_curr[valid]
@@ -3158,6 +3164,8 @@ class LogVisualizer:
         if len(iq_centers) > 0:
             axs[0, 0].plot(iq_centers, torque_mean, 'k-', linewidth=2.5, label='Mean Torque')
             axs[0, 0].plot(iq_centers, torque_p95, 'r--', linewidth=2, label='95% Torque')
+        me1616_iq = np.linspace(0, max(np.max(iq_plot), iq_bin_width), 100)
+        axs[0, 0].plot(me1616_iq, 0.22 * me1616_iq, 'g:', linewidth=2.2, label='ME1616 0.22 Nm/A Ref')
         axs[0, 0].set_title('Torque vs Iq')
         axs[0, 0].set_xlabel(x_label)
         axs[0, 0].set_ylabel('Actual Torque (Nm)')
@@ -3168,16 +3176,20 @@ class LogVisualizer:
 
         if len(iq_centers) > 0:
             axs[0, 1].plot(iq_centers, kt_median, 'b-o', markersize=4, linewidth=2)
+        axs[0, 1].axhline(0.22, color='g', linestyle=':', linewidth=2.2, label='ME1616 0.22 Nm/A Ref')
         axs[0, 1].set_title('Median Apparent Torque Constant')
         axs[0, 1].set_xlabel(x_label)
         axs[0, 1].set_ylabel('Torque / Iq (Nm/A)')
         axs[0, 1].grid(True)
+        axs[0, 1].legend(loc='best')
 
         axs[1, 0].scatter(rpm_sync, kt, s=8, alpha=0.25)
+        axs[1, 0].axhline(0.22, color='g', linestyle=':', linewidth=2.2, label='ME1616 0.22 Nm/A Ref')
         axs[1, 0].set_title('Torque / Iq vs RPM')
         axs[1, 0].set_xlabel('RPM')
         axs[1, 0].set_ylabel('Torque / Iq (Nm/A)')
         axs[1, 0].grid(True)
+        axs[1, 0].legend(loc='best')
 
         if len(iq_centers) > 0:
             axs[1, 1].bar(iq_centers, counts, width=iq_bin_width * 0.8)
@@ -3186,12 +3198,21 @@ class LogVisualizer:
         axs[1, 1].set_ylabel('Count')
         axs[1, 1].grid(True)
 
-        plt.tight_layout()
+        fig.text(
+            0.5,
+            0.015,
+            'Drive-region filter applied: negative torque removed, Iq > 0, RPM > 0.',
+            ha='center',
+            fontsize=10
+        )
+        plt.tight_layout(rect=[0, 0.04, 1, 1])
         plt.show()
 
         print("\n[Torque vs Iq Summary]")
         print(f"- Total valid points: {len(iq_plot)}")
         print(f"- Iq bins analyzed: {len(iq_centers)}")
+        print(f"- Drive-region filter: torque >= 0, Iq > 0, RPM > 0")
+        print(f"- Negative torque samples removed: {removed_negative_torque}")
         print(f"- Median Torque/Iq: {np.nanmedian(kt):.4f} Nm/A")
         print(f"- 95% Torque: {np.percentile(torque_sync, 95):.2f} Nm")
 
