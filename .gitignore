@@ -1,3 +1,9 @@
+#for MAC trash DATA
+
+#MAC OS
 .DS_Store
-__pycache__/
-*.pyc
+
+#Python in MAC, CASH files
+__pycache__/ 
+*.pyc 
+
