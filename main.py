@@ -51,6 +51,7 @@ LOG_NOTES = {
     },
 }
 ACTION_ORDER = (
+    #dir() 했다가 main 함수랑 다르게 사전식 배열로 정렬된거 보고 main의 순서대로 보정
     "gps-only",
     "torque-performance",
     "vector-control",
