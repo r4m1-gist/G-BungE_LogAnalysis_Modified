@@ -91,7 +91,7 @@ python3 main.py \
   --plot vector-control
 ```
 
-Absolute log paths are also supported. In non-interactive usage, if no log is given, `main.py` uses the default sample logs defined in the script.
+Absolute log paths are also supported. In non-interactive usage, pass at least one log with `--log`.
 
 | Source | Key | Data |
 | --- | --- | --- |
