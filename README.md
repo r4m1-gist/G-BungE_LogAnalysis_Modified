@@ -133,3 +133,16 @@ Absolute log paths are also supported. In non-interactive usage, pass at least o
 - Most arrays are preallocated with `NaN`, so analysis functions should filter valid data when needed.
 - Cooling and thermal regression plots are especially sensitive to `NaN` or sparse data, so defensive filtering is applied before fitting trends.
 - `NaN` values usually mean that the signal was not available, not parsed, or not received at that timestamp. They are mainly useful for checking data coverage, CAN dropouts, or parser mapping issues, not as physical values.
+
+Plotting functions in the visualizer module often include built-in assumptions and default constraints (e.g., current limits, bin widths, minimum samples per bin, field weakening thresholds). These are intentionally not hardcoded for all use cases.
+
+Users are expected to adjust key parameters at the main script level when calling these functions, rather than modifying the class implementation directly. This ensures consistency, reusability, and prevents unintended side effects across analyses.
+
+For example:
+
+`plot_id_iq_vs_rpm`: RPM bin size and minimum sample count should be tuned depending on data density.
+`plot_auto_field_weakening_trend`: Field weakening current limits must be set appropriately to match controller settings.
+`plot_torque_vs_iq`: Iq binning and absolute value usage may affect interpretation of torque linearity.
+`plot_motor_control_constraints`: Current limits and operating boundaries (MTPA, voltage ellipse) should reflect actual system constraints.
+
+In summary, treat plotting parameters as part of the analysis configuration (in main), not as fixed logic inside the visualizer class.
