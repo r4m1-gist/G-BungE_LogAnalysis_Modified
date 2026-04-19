@@ -1,3 +1,5 @@
+import matplotlib
+matplotlib.set_loglevel("error")
 import matplotlib.pyplot as plt
 import numpy as np
 from scipy.signal import butter, filtfilt  # [필수] 신호처리 라이브러리
@@ -3229,16 +3231,16 @@ class LogVisualizer:
     ):
         """
         [Motor Control Constraints]
-        Id-Iq operating point 위에 전류 제한원, MTPA 곡선, 전압 제한 타원을 겹쳐 본다.
+        Id-Iq operating point 위에 전류 제한원과 전압 제한 타원을 겹쳐 본다.
 
         Parameters
         ----------
         current_limit : float
             전류 제한원 반지름[A]. 예: 100A ref.
         ld, lq : float
-            d/q축 인덕턴스[H]. MTPA와 전압 제한 타원 계산에 필요.
+            d/q축 인덕턴스[H]. 전압 제한 타원 계산에 필요.
         psi_f : float
-            영구자석 flux linkage[Wb]. MTPA와 전압 제한 타원 계산에 필요.
+            영구자석 flux linkage[Wb]. 전압 제한 타원 계산에 필요.
         rs : float
             상저항[ohm]. 모르면 0으로 두고 전압 제한 타원을 근사한다.
         voltage_limit : float
@@ -3292,7 +3294,7 @@ class LogVisualizer:
             print("유효한 Id/Iq operating point가 없습니다.")
             return
 
-        motor_params_ready = (
+        voltage_params_ready = (
             ld is not None and
             lq is not None and
             psi_f is not None and
@@ -3331,31 +3333,7 @@ class LogVisualizer:
             label=f'Current Limit {current_limit:.0f} A'
         )
 
-        mtpa_id = None
-        mtpa_iq = None
-        if motor_params_ready:
-            delta_l = ld - lq
-            mtpa_id = []
-            mtpa_iq = []
-            current_grid = np.linspace(1.0, current_limit, 160)
-
-            for current in current_grid:
-                if abs(delta_l) < 1e-12:
-                    id_candidates = np.array([0.0])
-                else:
-                    id_candidates = np.linspace(-current, 0.0, 300)
-
-                iq_candidates = np.sqrt(np.maximum(current**2 - id_candidates**2, 0.0))
-                torque_score = psi_f * iq_candidates + delta_l * id_candidates * iq_candidates
-                best_idx = np.argmax(torque_score)
-                mtpa_id.append(id_candidates[best_idx])
-                mtpa_iq.append(iq_candidates[best_idx])
-
-            mtpa_id = np.array(mtpa_id)
-            mtpa_iq = np.array(mtpa_iq)
-            axs[0, 0].plot(mtpa_id, mtpa_iq, 'g-', linewidth=2.5, label='MTPA')
-
-        voltage_ready = motor_params_ready and voltage_limit is not None and rpm_levels is not None
+        voltage_ready = voltage_params_ready and voltage_limit is not None and rpm_levels is not None
         if voltage_ready:
             id_grid = np.linspace(axis_min, axis_max, 260)
             iq_grid = np.linspace(axis_min, axis_max, 260)
@@ -3383,7 +3361,7 @@ class LogVisualizer:
         axs[0, 0].set_xlim(axis_min, axis_max)
         axs[0, 0].set_ylim(axis_min, axis_max)
         axs[0, 0].set_aspect('equal', adjustable='box')
-        axs[0, 0].set_title('Id-Iq Map with Current / Voltage / MTPA Constraints')
+        axs[0, 0].set_title('Id-Iq Map with Current / Voltage Constraints')
         axs[0, 0].set_xlabel('Id (A)')
         axs[0, 0].set_ylabel('Iq (A)')
         axs[0, 0].grid(True)
@@ -3428,27 +3406,23 @@ class LogVisualizer:
                 va='center'
             )
 
-        # 4. MTPA Id command trend
-        if mtpa_id is not None and mtpa_iq is not None:
-            axs[1, 1].plot(mtpa_id, mtpa_iq, 'g-', linewidth=2.5, label='MTPA')
-            axs[1, 1].scatter(id_curr, iq_curr, s=8, alpha=0.15, label='Actual Operating Points')
-            axs[1, 1].axhline(0, color='gray', linestyle='--', linewidth=1)
-            axs[1, 1].axvline(0, color='gray', linestyle='--', linewidth=1)
-            axs[1, 1].set_title('MTPA Curve vs Actual Id-Iq')
-            axs[1, 1].set_xlabel('Id (A)')
-            axs[1, 1].set_ylabel('Iq (A)')
-            axs[1, 1].grid(True)
-            axs[1, 1].legend()
+        # 4. Actual Id/Iq trend
+        rpm_trend_mask = np.isfinite(rpm_sync)
+        if np.any(rpm_trend_mask):
+            axs[1, 1].scatter(rpm_sync[rpm_trend_mask], id_curr[rpm_trend_mask], s=8, alpha=0.25, label='Id')
+            axs[1, 1].scatter(rpm_sync[rpm_trend_mask], iq_curr[rpm_trend_mask], s=8, alpha=0.25, label='Iq')
+            axs[1, 1].set_title('Actual Id/Iq vs RPM')
+            axs[1, 1].set_xlabel('RPM')
         else:
-            axs[1, 1].axis('off')
-            axs[1, 1].text(
-                0.05,
-                0.5,
-                'MTPA skipped.\nProvide ld, lq, and psi_f.',
-                transform=axs[1, 1].transAxes,
-                fontsize=12,
-                va='center'
-            )
+            sample_index = np.arange(len(id_curr))
+            axs[1, 1].plot(sample_index, id_curr, linewidth=1.2, label='Id')
+            axs[1, 1].plot(sample_index, iq_curr, linewidth=1.2, label='Iq')
+            axs[1, 1].set_title('Actual Id/Iq Trend')
+            axs[1, 1].set_xlabel('Sample index')
+        axs[1, 1].axhline(0, color='gray', linestyle='--', linewidth=1)
+        axs[1, 1].set_ylabel('Current (A)')
+        axs[1, 1].grid(True)
+        axs[1, 1].legend()
 
         plt.tight_layout()
         plt.show()
@@ -3457,206 +3431,9 @@ class LogVisualizer:
         print(f"- Total valid Id/Iq points: {len(id_curr)}")
         print(f"- Current limit reference: {current_limit:.1f} A")
         print(f"- Max current magnitude: {np.nanmax(current_mag):.2f} A")
-        if motor_params_ready:
+        if voltage_params_ready:
             print(f"- Motor params: Ld={ld}, Lq={lq}, psi_f={psi_f}, Rs={rs}, pole_pairs={pole_pairs}")
         else:
-            print("- MTPA/voltage ellipse require motor params: ld, lq, psi_f.")
+            print("- Voltage ellipse requires motor params: ld, lq, psi_f.")
         if voltage_limit is not None:
             print(f"- Voltage limit reference: {voltage_limit:.2f} V")
-
-    def plot_empirical_mtpa_from_log(
-        self,
-        current_limit=200.0,
-        current_bin_width=10.0,
-        min_samples_per_bin=3,
-        rpm_max=1500.0,
-        rpm_min=0.0,
-        min_torque=5.0,
-        top_percentile=90.0,
-    ):
-        """
-        [Empirical MTPA-like Analysis]
-        모터 파라미터 없이 실제 로그에서 Torque per Ampere가 높은 Id/Iq 운전점을 찾는다.
-
-        이 함수는 이론 MTPA가 아니라 로그 기반 경험적 추세이다.
-        전압 제한/약계자 영향을 줄이기 위해 기본값은 저속 영역(rpm <= rpm_max)만 본다.
-        """
-        if self.data.Idq_set is None or self.data.torqueAct_set is None:
-            print("데이터 부족: Idq_set, torqueAct_set이 필요합니다.")
-            return
-
-        t_dq_raw = self.data.Idq_set[0, :]
-        id_raw = self.data.Idq_set[1, :]
-        iq_raw = self.data.Idq_set[2, :]
-
-        t_torque_raw = self.data.torqueAct_set[0, :]
-        torque_raw = self.data.torqueAct_set[1, :]
-
-        dq_valid = np.isfinite(t_dq_raw) & np.isfinite(id_raw) & np.isfinite(iq_raw)
-        torque_valid = np.isfinite(t_torque_raw) & np.isfinite(torque_raw)
-
-        t_dq = t_dq_raw[dq_valid]
-        id_curr = id_raw[dq_valid]
-        iq_curr = iq_raw[dq_valid]
-        t_torque = t_torque_raw[torque_valid]
-        torque = torque_raw[torque_valid]
-
-        if len(t_dq) < 2 or len(t_torque) < 2:
-            print("유효한 Id/Iq 또는 Torque 데이터가 부족합니다.")
-            return
-
-        dq_sort = np.argsort(t_dq)
-        t_dq = t_dq[dq_sort]
-        id_curr = id_curr[dq_sort]
-        iq_curr = iq_curr[dq_sort]
-
-        torque_sort = np.argsort(t_torque)
-        t_torque = t_torque[torque_sort]
-        torque = torque[torque_sort]
-
-        torque_sync = np.interp(t_dq, t_torque, torque)
-
-        rpm_sync = np.full_like(t_dq, np.nan, dtype=float)
-        if self.data.vel_set is not None:
-            t_rpm_raw = self.data.vel_set[0, :]
-            rpm_raw = self.data.vel_set[1, :]
-            rpm_valid = np.isfinite(t_rpm_raw) & np.isfinite(rpm_raw)
-            t_rpm = t_rpm_raw[rpm_valid]
-            rpm = rpm_raw[rpm_valid]
-            if len(t_rpm) >= 2:
-                rpm_sort = np.argsort(t_rpm)
-                rpm_sync = np.interp(t_dq, t_rpm[rpm_sort], rpm[rpm_sort])
-
-        current_mag = np.sqrt(id_curr**2 + iq_curr**2)
-        torque_per_amp = torque_sync / np.maximum(current_mag, 1e-6)
-
-        valid = (
-            np.isfinite(id_curr) &
-            np.isfinite(iq_curr) &
-            np.isfinite(torque_sync) &
-            np.isfinite(current_mag) &
-            np.isfinite(torque_per_amp) &
-            (current_mag > 1.0) &
-            (current_mag <= current_limit * 1.5) &
-            (torque_sync >= min_torque) &
-            (id_curr > -1000) & (id_curr < 1000) &
-            (iq_curr > -1000) & (iq_curr < 1000)
-        )
-
-        if np.any(np.isfinite(rpm_sync)):
-            valid = valid & np.isfinite(rpm_sync) & (rpm_sync >= rpm_min) & (rpm_sync <= rpm_max)
-
-        id_curr = id_curr[valid]
-        iq_curr = iq_curr[valid]
-        torque_sync = torque_sync[valid]
-        rpm_sync = rpm_sync[valid]
-        current_mag = current_mag[valid]
-        torque_per_amp = torque_per_amp[valid]
-
-        if len(id_curr) == 0:
-            print("유효한 empirical MTPA 분석 데이터가 없습니다.")
-            return
-
-        current_max = np.ceil(np.max(current_mag) / current_bin_width) * current_bin_width
-        bins = np.arange(0, current_max + current_bin_width, current_bin_width)
-
-        emp_id = []
-        emp_iq = []
-        emp_current = []
-        emp_tpa = []
-        emp_torque = []
-        counts = []
-
-        for i in range(len(bins) - 1):
-            mask = (current_mag >= bins[i]) & (current_mag < bins[i + 1])
-            if np.sum(mask) < min_samples_per_bin:
-                continue
-
-            tpa_bin = torque_per_amp[mask]
-            threshold = np.percentile(tpa_bin, top_percentile)
-            top_mask_local = tpa_bin >= threshold
-
-            id_bin = id_curr[mask][top_mask_local]
-            iq_bin = iq_curr[mask][top_mask_local]
-            current_bin = current_mag[mask][top_mask_local]
-            torque_bin = torque_sync[mask][top_mask_local]
-            tpa_top = tpa_bin[top_mask_local]
-
-            emp_id.append(np.mean(id_bin))
-            emp_iq.append(np.mean(iq_bin))
-            emp_current.append(np.mean(current_bin))
-            emp_torque.append(np.mean(torque_bin))
-            emp_tpa.append(np.mean(tpa_top))
-            counts.append(np.sum(mask))
-
-        emp_id = np.array(emp_id)
-        emp_iq = np.array(emp_iq)
-        emp_current = np.array(emp_current)
-        emp_torque = np.array(emp_torque)
-        emp_tpa = np.array(emp_tpa)
-        counts = np.array(counts)
-
-        fig, axs = plt.subplots(2, 2, figsize=(14, 11))
-
-        sc = axs[0, 0].scatter(id_curr, iq_curr, c=torque_per_amp, s=8, alpha=0.35, cmap='turbo')
-        theta = np.linspace(0, 2 * np.pi, 361)
-        axs[0, 0].plot(
-            current_limit * np.cos(theta),
-            current_limit * np.sin(theta),
-            'k--',
-            linewidth=1.8,
-            label=f'Current Limit {current_limit:.0f} A'
-        )
-        if len(emp_id) > 0:
-            axs[0, 0].plot(emp_id, emp_iq, 'r-o', markersize=4, linewidth=2.3,
-                           label=f'Empirical MTPA-like ({top_percentile:.0f}% T/A)')
-        axs[0, 0].axhline(0, color='gray', linestyle='--', linewidth=1)
-        axs[0, 0].axvline(0, color='gray', linestyle='--', linewidth=1)
-        axs[0, 0].set_aspect('equal', adjustable='box')
-        axs[0, 0].set_title('Empirical Torque per Ampere Map')
-        axs[0, 0].set_xlabel('Id (A)')
-        axs[0, 0].set_ylabel('Iq (A)')
-        axs[0, 0].grid(True)
-        axs[0, 0].legend(loc='best')
-        cbar = fig.colorbar(sc, ax=axs[0, 0])
-        cbar.set_label('Torque / Current (Nm/A)')
-
-        axs[0, 1].scatter(current_mag, torque_per_amp, c=rpm_sync, s=8, alpha=0.35, cmap='viridis')
-        if len(emp_current) > 0:
-            axs[0, 1].plot(emp_current, emp_tpa, 'r-o', markersize=4, linewidth=2.3,
-                           label='Best trend by current bin')
-        axs[0, 1].set_title('Torque per Ampere vs Current Magnitude')
-        axs[0, 1].set_xlabel('Current magnitude (A)')
-        axs[0, 1].set_ylabel('Torque / Current (Nm/A)')
-        axs[0, 1].grid(True)
-        if len(emp_current) > 0:
-            axs[0, 1].legend(loc='best')
-
-        axs[1, 0].scatter(rpm_sync, torque_per_amp, s=8, alpha=0.3)
-        axs[1, 0].set_title('Torque per Ampere vs RPM')
-        axs[1, 0].set_xlabel('RPM')
-        axs[1, 0].set_ylabel('Torque / Current (Nm/A)')
-        axs[1, 0].grid(True)
-
-        if len(emp_current) > 0:
-            axs[1, 1].bar(emp_current, counts, width=current_bin_width * 0.8)
-        axs[1, 1].set_title('Sample Count per Current Bin')
-        axs[1, 1].set_xlabel('Current magnitude (A)')
-        axs[1, 1].set_ylabel('Count')
-        axs[1, 1].grid(True)
-
-        plt.tight_layout()
-        plt.show()
-
-        print("\n[Empirical MTPA-like Summary]")
-        print(f"- Total valid points: {len(id_curr)}")
-        print(f"- RPM filter: {rpm_min:.0f} <= RPM <= {rpm_max:.0f}")
-        print(f"- Current bins analyzed: {len(emp_current)}")
-        print(f"- Median Torque/Current: {np.nanmedian(torque_per_amp):.4f} Nm/A")
-        print(f"- Best observed Torque/Current: {np.nanmax(torque_per_amp):.4f} Nm/A")
-        if len(emp_current) > 0:
-            best_idx = np.argmax(emp_tpa)
-            print(f"- Best empirical point: Id={emp_id[best_idx]:.2f} A, Iq={emp_iq[best_idx]:.2f} A")
-            print(f"  Current={emp_current[best_idx]:.2f} A, Torque/Current={emp_tpa[best_idx]:.4f} Nm/A")
-        else:
-            print("- Not enough samples per current bin. Try a larger current_bin_width or lower min_samples_per_bin.")

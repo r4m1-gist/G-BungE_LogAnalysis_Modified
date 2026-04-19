@@ -81,9 +81,15 @@ Logs in 2nd Test Week
 Select log numbers (example: 1,3-5 or all): 15
 
 Plots / Actions
+  Tip: 분석 목적별로 묶었습니다. 번호 입력 방식은 동일합니다: 1,4 또는 all
+
+  [Core / GPS]
    1. gps-only  # GPS 주행 궤적
-   2. torque-performance  # 토크 응답성 확인
-   3. vector-control  # 벡터 제어(Id/Iq) 상태 확인
+   2. gps-velocity-and-slip  # GPS 속도 slip ratio
+
+  [Torque / Motor Control]
+   6. torque-performance  # 토크 응답성 확인
+   7. vector-control  # 벡터 제어(Id/Iq) 상태 확인
 Select plot/action numbers (example: 1,4 or all): 1
 ```
 
@@ -134,15 +140,35 @@ Absolute log paths are also supported. In non-interactive usage, pass at least o
 - Cooling and thermal regression plots are especially sensitive to `NaN` or sparse data, so defensive filtering is applied before fitting trends.
 - `NaN` values usually mean that the signal was not available, not parsed, or not received at that timestamp. They are mainly useful for checking data coverage, CAN dropouts, or parser mapping issues, not as physical values.
 
-Plotting functions in the visualizer module often include built-in assumptions and default constraints (e.g., current limits, bin widths, minimum samples per bin, field weakening thresholds). These are intentionally not hardcoded for all use cases.
+Plotting functions in the visualizer module often include assumptions and default constraints (e.g., current limits, bin widths, minimum samples per bin, field weakening thresholds). Treat those values as analysis configuration.
 
-Users are expected to adjust key parameters at the main script level when calling these functions, rather than modifying the class implementation directly. This ensures consistency, reusability, and prevents unintended side effects across analyses.
+When a graph needs different conditions, adjust the function call at the `main.py` level before running the analysis, rather than changing the class implementation in `logPostProcessor.py` each time. In other words, keep the plot functions reusable and pass run-specific parameters from the caller.
 
 For example:
 
-`plot_id_iq_vs_rpm`: RPM bin size and minimum sample count should be tuned depending on data density.
-`plot_auto_field_weakening_trend`: Field weakening current limits must be set appropriately to match controller settings.
-`plot_torque_vs_iq`: Iq binning and absolute value usage may affect interpretation of torque linearity.
-`plot_motor_control_constraints`: Current limits and operating boundaries (MTPA, voltage ellipse) should reflect actual system constraints.
+```python
+visualizer.plot_id_iq_vs_rpm(
+    rpm_bin_width=100.0,
+    min_samples_per_bin=10,
+    current_limit=None,
+)
+
+visualizer.plot_auto_field_weakening_trend(
+    fw_current_limit=None,
+    rpm_bin_width=100.0,
+    min_samples_per_bin=10,
+)
+
+visualizer.plot_torque_vs_iq(
+    iq_bin_width=10.0,
+    min_samples_per_bin=8,
+    use_abs_iq=False,
+    min_abs_iq=5.0,
+)
+```
+
+Tune these values depending on the log: sparse data usually needs wider bins or lower minimum sample counts; controller reference lines such as current limits should match the vehicle setup used for that run.
+
+The interactive action menu is grouped by analysis purpose to keep the function list readable after clearing the terminal. The selection numbers still refer to the full action list, so existing input styles such as `1,4`, `3-7`, and `all` still work.
 
 In summary, treat plotting parameters as part of the analysis configuration (in main), not as fixed logic inside the visualizer class.

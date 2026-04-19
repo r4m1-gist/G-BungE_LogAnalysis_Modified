@@ -4,7 +4,9 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
+import tempfile
 from pathlib import Path
 from typing import Iterable
 
@@ -15,6 +17,9 @@ PROJECT_ROOT = Path(__file__).resolve().parent
 LOGS_ROOT = PROJECT_ROOT / "Logs"
 DEFAULT_LOG_GROUP = "2nd Test Week"
 LOG_RECORD_BYTES = 16
+DEFAULT_MPLCONFIGDIR = Path(tempfile.gettempdir()) / "g-bunge-loganalysis-matplotlib"
+os.environ.setdefault("MPLCONFIGDIR", str(DEFAULT_MPLCONFIGDIR))
+DEFAULT_MPLCONFIGDIR.mkdir(parents=True, exist_ok=True)
 LOG_NOTES = {
     "2nd Test Week": {
         "2025-08-17 00-33-28.log": "Laps: 1/0/0, Remarks: 등 선 빠져서 바로 들어왔음",
@@ -86,7 +91,6 @@ ACTION_ORDER = (
     "auto-field-weakening-trend",
     "torque-vs-iq",
     "motor-control-constraints",
-    "empirical-mtpa-from-log",
 )
 ACTION_NOTES = {
     "advanced-id-iq-analysis": "[고급 분석] Id/Iq 데이터 기반 기어비, 토크맵, 주행전략 분석",
@@ -96,14 +100,13 @@ ACTION_NOTES = {
     "cooling-trend-regression": "순수 냉각 성능 정밀 분석",
     "current-efficiency": "배터리 전류 vs 모터 상전류 비교 (인버터 효율 확인)",
     "current-vs-torque-efficiency": "효율 분석: 토크 대비 소모 전류량",
-    "empirical-mtpa-from-log": "저속 로그에서 Torque/Current가 높은 Id-Iq 운전점 추세 확인",
     "field-weakening": "약계자 제어",
     "gps-gforce-map": "GPS G-Force Heatmap",
     "gps-only": "GPS 주행 궤적",
     "gps-velocity-and-slip": "GPS 속도 slip ratio",
     "id-iq-vs-rpm": "RPM 기준 Id/Iq 전류 추세 확인",
     "laps-slideshow": "키보드 좌우 방향키로 랩 넘겨보기",
-    "motor-control-constraints": "Id-Iq operating point, 전류 제한원, MTPA, 전압 제한 타원 시각화",
+    "motor-control-constraints": "Id-Iq operating point, 전류 제한원, 전압 제한 타원 시각화",
     "moving-rms": "고급 전력 분석 30초 이동 RMS",
     "power-and-temp": "입력 전력(P = V*I)과 모터 온도 비교",
     "power-vs-rpm": "입력 전력과 RPM 관계 확인",
@@ -126,6 +129,68 @@ ACTION_NOTES = {
     "vehicle-dynamics-lpf": "NaN 데이터 제거 후 필터링 적용",
     "vehicle-dynamics-mv-avg": "3초 이동 평균(Moving Average) 적용",
 }
+ACTION_GROUPS = (
+    (
+        "Core / GPS",
+        (
+            "gps-only",
+            "gps-velocity-and-slip",
+            "gps-gforce-map",
+            "split-laps",
+            "laps-slideshow",
+        ),
+    ),
+    (
+        "Torque / Motor Control",
+        (
+            "torque-performance",
+            "vector-control",
+            "field-weakening",
+            "advanced-id-iq-analysis",
+            "id-iq-vs-rpm",
+            "auto-field-weakening-trend",
+            "torque-vs-iq",
+            "motor-control-constraints",
+            "torque-vs-rpm",
+            "torque-vs-temperature",
+            "tn-curve-envelope",
+        ),
+    ),
+    (
+        "Power / Efficiency",
+        (
+            "power-and-temp",
+            "moving-rms",
+            "power-vs-rpm",
+            "power-flow",
+            "current-vs-torque-efficiency",
+            "current-efficiency",
+        ),
+    ),
+    (
+        "Thermal / Cooling",
+        (
+            "temperature-profile",
+            "temp-rise-vs-power",
+            "temp-slope-trend",
+            "thermal-path",
+            "thermal-path-v2",
+            "power-vs-temp-slope",
+            "cooling-trend-regression",
+            "cooling-intercept",
+            "thermal-lag",
+            "cooling-trend-high-temp",
+        ),
+    ),
+    (
+        "Vehicle Dynamics",
+        (
+            "vehicle-dynamics",
+            "vehicle-dynamics-lpf",
+            "vehicle-dynamics-mv-avg",
+        ),
+    ),
+)
 
 
 def normalize_action_name(name: str) -> str:
@@ -190,6 +255,45 @@ def format_action_option(action_name: str) -> str:
     return action_name
 
 
+def grouped_action_sections(action_names: list[str]) -> list[tuple[str, list[str]]]:
+    """Return action names grouped by analysis theme."""
+    action_set = set(action_names)
+    printed: set[str] = set()
+    sections: list[tuple[str, list[str]]] = []
+
+    for group_name, grouped_actions in ACTION_GROUPS:
+        visible_actions = [action for action in grouped_actions if action in action_set]
+        if not visible_actions:
+            continue
+
+        printed.update(visible_actions)
+        sections.append((group_name, visible_actions))
+
+    remaining_actions = [action for action in action_names if action not in printed]
+    if remaining_actions:
+        sections.append(("Other", remaining_actions))
+
+    return sections
+
+
+def flatten_grouped_actions(action_names: list[str]) -> list[str]:
+    """Return action names in grouped display order."""
+    display_names: list[str] = []
+    for _, section_actions in grouped_action_sections(action_names):
+        display_names.extend(section_actions)
+    return display_names
+
+
+def print_grouped_action_options(action_names: list[str]) -> None:
+    """Print action options grouped by analysis theme with readable continuous indexes."""
+    display_index = 1
+    for group_name, section_actions in grouped_action_sections(action_names):
+        print(f"\n  [{group_name}]")
+        for action_name in section_actions:
+            print(f"  {display_index:>2}. {format_action_option(action_name)}")
+            display_index += 1
+
+
 def resolve_log_path(log_file: str, group: str) -> Path:
     """Resolve absolute paths directly, otherwise resolve under Logs/<group>."""
     expanded = Path(log_file).expanduser()
@@ -242,8 +346,7 @@ def flatten_log_args(log_options: list[list[str]] | None, positional_logs: list[
 
 def print_available_actions(registry: dict[str, str]) -> None:
     print("Available plot/action names:")
-    for idx, action_name in enumerate(registry, start=1):
-        print(f"  {idx:>2}. {format_action_option(action_name)}")
+    print_grouped_action_options(list(registry))
 
 
 def print_available_logs() -> None:
@@ -335,6 +438,26 @@ def prompt_for_indexes(
             print(f"WARN: {exc}")
 
 
+def prompt_for_action_names(action_names: list[str]) -> list[str]:
+    """Prompt for plot/action selection using grouped output for readability."""
+    if not action_names:
+        raise ValueError("No options available for Plots / Actions.")
+
+    display_action_names = flatten_grouped_actions(action_names)
+
+    print("\nPlots / Actions")
+    print("  Tip: 분석 목적별로 묶었습니다. 번호 입력 방식은 동일합니다: 1,4 또는 all")
+    print_grouped_action_options(action_names)
+
+    while True:
+        raw_value = input("Select plot/action numbers (example: 1,4 or all): ").strip()
+        try:
+            selected_indexes = parse_number_selection(raw_value, len(display_action_names), allow_all=True)
+            return [display_action_names[index] for index in selected_indexes]
+        except ValueError as exc:
+            print(f"WARN: {exc}")
+
+
 def select_interactively(registry: dict[str, str]) -> tuple[str, list[str], list[str]]:
     """Prompt the user to choose a group, logs, and plots."""
     groups = discover_log_groups()
@@ -363,15 +486,7 @@ def select_interactively(registry: dict[str, str]) -> tuple[str, list[str], list
     selected_logs = [logs[index] for index in selected_log_indexes]
 
     action_names = list(registry)
-    action_options = [format_action_option(action_name) for action_name in action_names]
-    selected_action_indexes = prompt_for_indexes(
-        "Plots / Actions",
-        action_options,
-        "Select plot/action numbers (example: 1,4 or all)",
-        default_indexes=None,
-        allow_all=True,
-    )
-    selected_actions = [action_names[index] for index in selected_action_indexes]
+    selected_actions = prompt_for_action_names(action_names)
 
     print("\nSelection summary:")
     print(f"  group: {group}")
