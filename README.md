@@ -41,14 +41,6 @@ If `py` is not available on Windows, use:
 python -m pip install -r requirements.txt
 ```
 
-## CAN Data Mapping
-
-The parser is based on 2025 vehicle Mk.4 logs and currently focuses on MK4 CAN data.
-
-When adding new logs, place the `.log` files under `Logs/<group name>/`, then pass the group and log file names to `main.py`.
-
-## CLI Usage
-
 Run the interactive menu:
 
 ```bash
@@ -112,6 +104,14 @@ Run multiple split-session logs in order:
 ```
 
 Absolute log paths are also supported. In non-interactive usage, pass at least one log with `--log`.
+
+## CAN Data Mapping
+
+The parser is based on 2025 vehicle Mk.4 logs and currently focuses on MK4 CAN data.
+
+When adding new logs, place the `.log` files under `Logs/<group name>/`, then pass the group and log file names to `main.py`.
+
+## CLI Usage
 
 | Source | Key | Data |
 | --- | --- | --- |
