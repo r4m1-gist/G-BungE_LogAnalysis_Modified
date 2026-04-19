@@ -2244,37 +2244,145 @@ class LogVisualizer:
             plt.tight_layout()
             plt.show()
 
-    def plot_tn_curve_envelope(self):
+    def plot_tn_curve_envelope(self, rpm_bin_width=100.0, min_samples_per_bin=10, drop_ratio=0.85):
+        """
+        [T-N Curve Envelope]
+        실제 주행 데이터 기준으로 RPM별 토크 상한선을 확인한다.
 
-        t_rpm = self.data.vel_set[0, :]
-        rpm = self.data.vel_set[1, :]
+        - 95% torque: 해당 RPM 구간에서 실제로 자주 도달한 상한선
+        - 99% torque: 순간 피크에 가까운 상한선
+        - median torque: 일반 주행 분포 확인용
+        - sample count: 각 RPM bin의 데이터 신뢰도 확인용
+        """
+        if self.data.vel_set is None or self.data.torqueAct_set is None:
+            print("데이터 부족: vel_set, torqueAct_set이 필요합니다.")
+            return
 
-        t_torque = self.data.torqueAct_set[0, :]
-        torque = self.data.torqueAct_set[1, :]
+        t_rpm_raw = self.data.vel_set[0, :]
+        rpm_raw = self.data.vel_set[1, :]
+        t_torque_raw = self.data.torqueAct_set[0, :]
+        torque_raw = self.data.torqueAct_set[1, :]
 
-        valid = np.isfinite(rpm) & np.isfinite(torque)
+        rpm_valid = np.isfinite(t_rpm_raw) & np.isfinite(rpm_raw)
+        torque_valid = np.isfinite(t_torque_raw) & np.isfinite(torque_raw)
+
+        t_rpm = t_rpm_raw[rpm_valid]
+        rpm = rpm_raw[rpm_valid]
+        t_torque = t_torque_raw[torque_valid]
+        torque = torque_raw[torque_valid]
+
+        if len(t_rpm) < 2 or len(t_torque) < 2:
+            print("유효한 RPM 또는 Torque 데이터가 부족합니다.")
+            return
+
+        rpm_sort = np.argsort(t_rpm)
+        t_rpm = t_rpm[rpm_sort]
+        rpm = rpm[rpm_sort]
+
+        torque_sort = np.argsort(t_torque)
+        t_torque = t_torque[torque_sort]
+        torque = torque[torque_sort]
+
+        torque_sync = np.interp(t_rpm, t_torque, torque)
+
+        valid = (
+            np.isfinite(rpm) &
+            np.isfinite(torque_sync) &
+            (rpm >= 0) &
+            (rpm <= 6000) &
+            (torque_sync >= 0) &
+            (torque_sync <= 300)
+        )
+
         rpm = rpm[valid]
-        torque = torque[valid]
+        torque = torque_sync[valid]
 
-        bins = np.arange(0, 3500, 100)
+        if len(rpm) == 0:
+            print("유효한 T-N curve 데이터가 없습니다.")
+            return
+
+        rpm_max = np.ceil(np.max(rpm) / rpm_bin_width) * rpm_bin_width
+        bins = np.arange(0, rpm_max + rpm_bin_width, rpm_bin_width)
 
         rpm_centers = []
-        torque_env = []
+        torque_p50 = []
+        torque_p95 = []
+        torque_p99 = []
+        counts = []
 
-        for i in range(len(bins)-1):
-            mask = (rpm >= bins[i]) & (rpm < bins[i+1])
+        for i in range(len(bins) - 1):
+            mask = (rpm >= bins[i]) & (rpm < bins[i + 1])
 
-            if np.sum(mask) < 10:
+            if np.sum(mask) < min_samples_per_bin:
                 continue
 
-            rpm_centers.append(np.mean(rpm[mask]))
-            torque_env.append(np.percentile(torque[mask], 95))
+            rpm_bin = rpm[mask]
+            torque_bin = torque[mask]
 
-        plt.scatter(rpm, torque, s=5, alpha=0.2)
-        plt.plot(rpm_centers, torque_env, 'r-', linewidth=2)
+            rpm_centers.append(np.mean(rpm_bin))
+            torque_p50.append(np.percentile(torque_bin, 50))
+            torque_p95.append(np.percentile(torque_bin, 95))
+            torque_p99.append(np.percentile(torque_bin, 99))
+            counts.append(np.sum(mask))
+
+        rpm_centers = np.array(rpm_centers)
+        torque_p50 = np.array(torque_p50)
+        torque_p95 = np.array(torque_p95)
+        torque_p99 = np.array(torque_p99)
+        counts = np.array(counts)
+
+        if len(rpm_centers) == 0:
+            print("RPM bin별 T-N curve 분석이 불가능합니다. 데이터가 부족합니다.")
+            return
+
+        peak_idx = np.argmax(torque_p95)
+        peak_rpm = rpm_centers[peak_idx]
+        peak_torque = torque_p95[peak_idx]
+
+        drop_rpm = None
+        drop_threshold = peak_torque * drop_ratio
+        after_peak = np.arange(len(rpm_centers)) > peak_idx
+        drop_candidates = np.where(after_peak & (torque_p95 < drop_threshold))[0]
+        if len(drop_candidates) > 0:
+            drop_rpm = rpm_centers[drop_candidates[0]]
+
+        fig, (ax1, ax2) = plt.subplots(
+            2, 1, figsize=(12, 8), sharex=True,
+            gridspec_kw={'height_ratios': [4, 1]}
+        )
+
+        ax1.scatter(rpm[::5], torque[::5], s=5, alpha=0.18, label='Raw Actual Torque')
+        ax1.plot(rpm_centers, torque_p50, 'k--', linewidth=1.8, label='Median Torque')
+        ax1.plot(rpm_centers, torque_p95, 'r-', linewidth=2.6, label='Torque Envelope (95%)')
+        ax1.plot(rpm_centers, torque_p99, 'm:', linewidth=2.2, label='Torque Peak Envelope (99%)')
+        ax1.plot(peak_rpm, peak_torque, 'ro', markersize=8, label=f'Peak 95%: {peak_torque:.1f} Nm @ {peak_rpm:.0f} RPM')
+
+        if drop_rpm is not None:
+            ax1.axvline(drop_rpm, color='orange', linestyle='--', linewidth=1.8,
+                        label=f'Drop below {drop_ratio * 100:.0f}% @ {drop_rpm:.0f} RPM')
+
+        ax1.set_title('T-N Curve Envelope')
+        ax1.set_ylabel('Torque (Nm)')
+        ax1.grid(True)
+        ax1.legend(loc='best')
+
+        ax2.bar(rpm_centers, counts, width=rpm_bin_width * 0.8)
+        ax2.set_xlabel('RPM')
+        ax2.set_ylabel('Count')
+        ax2.set_title('Sample Count per RPM Bin')
+        ax2.grid(True)
 
         plt.tight_layout()
         plt.show()
+
+        print("\n[T-N Curve Envelope Summary]")
+        print(f"- Total valid points: {len(rpm)}")
+        print(f"- RPM bins analyzed: {len(rpm_centers)}")
+        print(f"- Peak 95% torque: {peak_torque:.2f} Nm @ {peak_rpm:.0f} RPM")
+        if drop_rpm is not None:
+            print(f"- First drop below {drop_ratio * 100:.0f}% of peak: RPM ~ {drop_rpm:.0f}")
+        else:
+            print(f"- No clear drop below {drop_ratio * 100:.0f}% of peak after peak RPM.")
 
     def plot_power_vs_rpm(self):
         if self.data.vel_set is None or self.data.torqueAct_set is None:
@@ -2686,3 +2794,163 @@ class LogVisualizer:
                 print(f"- First >90% FW current reference point: RPM ~ {np.min(rpm_sync[near_limit]):.0f}")
             else:
                 print("- FW current가 reference의 90%를 넘는 구간이 뚜렷하지 않습니다.")
+
+    def plot_torque_vs_iq(self, iq_bin_width=10.0, min_samples_per_bin=8, use_abs_iq=False, min_abs_iq=5.0):
+        """
+        [Torque vs Iq]
+        실제 토크가 Iq에 대해 얼마나 일관되게 나오는지 확인한다.
+
+        해석 포인트
+        - 저속/정상 구간에서 Torque/Iq가 크게 흔들리면 토크 환산 또는 전류 스케일 확인 필요
+        - 고RPM/약계자 구간에서 같은 Iq 대비 토크가 줄면 전압 제한 또는 Id 영향 가능성
+        - RPM 색상을 같이 보면서 토크-Iq 관계가 속도에 따라 갈라지는지 확인
+        """
+        if self.data.Idq_set is None or self.data.torqueAct_set is None:
+            print("데이터 부족: Idq_set, torqueAct_set이 필요합니다.")
+            return
+
+        t_dq_raw = self.data.Idq_set[0, :]
+        id_raw = self.data.Idq_set[1, :]
+        iq_raw = self.data.Idq_set[2, :]
+
+        t_torque_raw = self.data.torqueAct_set[0, :]
+        torque_raw = self.data.torqueAct_set[1, :]
+
+        dq_valid = np.isfinite(t_dq_raw) & np.isfinite(id_raw) & np.isfinite(iq_raw)
+        torque_valid = np.isfinite(t_torque_raw) & np.isfinite(torque_raw)
+
+        t_dq = t_dq_raw[dq_valid]
+        id_curr = id_raw[dq_valid]
+        iq_curr = iq_raw[dq_valid]
+        t_torque = t_torque_raw[torque_valid]
+        torque = torque_raw[torque_valid]
+
+        if len(t_dq) < 2 or len(t_torque) < 2:
+            print("유효한 Id/Iq 또는 Torque 데이터가 부족합니다.")
+            return
+
+        dq_sort = np.argsort(t_dq)
+        t_dq = t_dq[dq_sort]
+        id_curr = id_curr[dq_sort]
+        iq_curr = iq_curr[dq_sort]
+
+        torque_sort = np.argsort(t_torque)
+        t_torque = t_torque[torque_sort]
+        torque = torque[torque_sort]
+
+        torque_sync = np.interp(t_dq, t_torque, torque)
+
+        if self.data.vel_set is not None:
+            t_rpm_raw = self.data.vel_set[0, :]
+            rpm_raw = self.data.vel_set[1, :]
+            rpm_valid = np.isfinite(t_rpm_raw) & np.isfinite(rpm_raw)
+            t_rpm = t_rpm_raw[rpm_valid]
+            rpm = rpm_raw[rpm_valid]
+            if len(t_rpm) >= 2:
+                rpm_sort = np.argsort(t_rpm)
+                rpm_sync = np.interp(t_dq, t_rpm[rpm_sort], rpm[rpm_sort])
+            else:
+                rpm_sync = np.full_like(t_dq, np.nan, dtype=float)
+        else:
+            rpm_sync = np.full_like(t_dq, np.nan, dtype=float)
+
+        valid = (
+            np.isfinite(iq_curr) &
+            np.isfinite(id_curr) &
+            np.isfinite(torque_sync) &
+            (np.abs(iq_curr) >= min_abs_iq) &
+            (iq_curr > -1000) & (iq_curr < 1000) &
+            (id_curr > -1000) & (id_curr < 1000) &
+            (torque_sync > -100) & (torque_sync < 300)
+        )
+
+        iq_curr = iq_curr[valid]
+        id_curr = id_curr[valid]
+        torque_sync = torque_sync[valid]
+        rpm_sync = rpm_sync[valid]
+
+        if len(iq_curr) == 0:
+            print("유효한 Torque-Iq 데이터가 없습니다.")
+            return
+
+        if use_abs_iq:
+            iq_plot = np.abs(iq_curr)
+            x_label = '|Iq| (A)'
+            kt = torque_sync / np.maximum(iq_plot, 1e-6)
+        else:
+            iq_plot = iq_curr
+            x_label = 'Iq (A)'
+            kt = torque_sync / iq_curr
+
+        iq_min = np.floor(np.min(iq_plot) / iq_bin_width) * iq_bin_width
+        iq_max = np.ceil(np.max(iq_plot) / iq_bin_width) * iq_bin_width
+        bins = np.arange(iq_min, iq_max + iq_bin_width, iq_bin_width)
+
+        iq_centers = []
+        torque_mean = []
+        torque_p50 = []
+        torque_p95 = []
+        kt_median = []
+        counts = []
+
+        for i in range(len(bins) - 1):
+            mask = (iq_plot >= bins[i]) & (iq_plot < bins[i + 1])
+            if np.sum(mask) < min_samples_per_bin:
+                continue
+
+            iq_centers.append(np.mean(iq_plot[mask]))
+            torque_mean.append(np.mean(torque_sync[mask]))
+            torque_p50.append(np.percentile(torque_sync[mask], 50))
+            torque_p95.append(np.percentile(torque_sync[mask], 95))
+            kt_median.append(np.nanmedian(kt[mask]))
+            counts.append(np.sum(mask))
+
+        iq_centers = np.array(iq_centers)
+        torque_mean = np.array(torque_mean)
+        torque_p50 = np.array(torque_p50)
+        torque_p95 = np.array(torque_p95)
+        kt_median = np.array(kt_median)
+        counts = np.array(counts)
+
+        fig, axs = plt.subplots(2, 2, figsize=(14, 10))
+
+        sc = axs[0, 0].scatter(iq_plot, torque_sync, c=rpm_sync, s=8, alpha=0.35, cmap='turbo')
+        if len(iq_centers) > 0:
+            axs[0, 0].plot(iq_centers, torque_mean, 'k-', linewidth=2.5, label='Mean Torque')
+            axs[0, 0].plot(iq_centers, torque_p95, 'r--', linewidth=2, label='95% Torque')
+        axs[0, 0].set_title('Torque vs Iq')
+        axs[0, 0].set_xlabel(x_label)
+        axs[0, 0].set_ylabel('Actual Torque (Nm)')
+        axs[0, 0].grid(True)
+        axs[0, 0].legend()
+        cbar = fig.colorbar(sc, ax=axs[0, 0])
+        cbar.set_label('RPM')
+
+        if len(iq_centers) > 0:
+            axs[0, 1].plot(iq_centers, kt_median, 'b-o', markersize=4, linewidth=2)
+        axs[0, 1].set_title('Median Apparent Torque Constant')
+        axs[0, 1].set_xlabel(x_label)
+        axs[0, 1].set_ylabel('Torque / Iq (Nm/A)')
+        axs[0, 1].grid(True)
+
+        axs[1, 0].scatter(rpm_sync, kt, s=8, alpha=0.25)
+        axs[1, 0].set_title('Torque / Iq vs RPM')
+        axs[1, 0].set_xlabel('RPM')
+        axs[1, 0].set_ylabel('Torque / Iq (Nm/A)')
+        axs[1, 0].grid(True)
+
+        if len(iq_centers) > 0:
+            axs[1, 1].bar(iq_centers, counts, width=iq_bin_width * 0.8)
+        axs[1, 1].set_title('Sample Count per Iq Bin')
+        axs[1, 1].set_xlabel(x_label)
+        axs[1, 1].set_ylabel('Count')
+        axs[1, 1].grid(True)
+
+        plt.tight_layout()
+        plt.show()
+
+        print("\n[Torque vs Iq Summary]")
+        print(f"- Total valid points: {len(iq_plot)}")
+        print(f"- Iq bins analyzed: {len(iq_centers)}")
+        print(f"- Median Torque/Iq: {np.nanmedian(kt):.4f} Nm/A")
+        print(f"- 95% Torque: {np.percentile(torque_sync, 95):.2f} Nm")

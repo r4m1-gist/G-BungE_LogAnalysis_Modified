@@ -21,6 +21,9 @@ log_data = VehicleLog()
 #     '2025-08-17 03-55-58.log',
 #     '2025-08-17 04-32-36.log',
 #     '2025-08-17 05-27-32.log',
+#
+# ------------------ 이 이후로 Iq, Id 파악 가능 ------------------
+#
 #     '2025-08-17 05-31-36.log',  # Laps: 1/2/1, Remarks: 최고 기록: 1:21.004
 #     '2025-08-17 05-44-54.log',  # Laps: 1/0/0, Remarks: 스핀함, 결승선 근처 GPS 튐
 #     '2025-08-17 07-08-04.log',
@@ -233,8 +236,8 @@ if __name__ == "__main__":
     저온(포화) 영역 데이터 배제 -> 진짜 냉각 성능(기울기) 확인
     '''
 
-    # visualizer.plot_tn_curve_envelope() 
-    # T-N 커브 추세선
+    visualizer.plot_tn_curve_envelope() 
+    # T-N Curve Envelope (토크-속도 곡선 봉우리)
     '''
     대표 토크값은 상위 95%값 사용
     대표 RPM값은 그 구간 평균 RPM 사용
@@ -245,6 +248,8 @@ if __name__ == "__main__":
     # visualizer.plot_id_iq_vs_rpm(rpm_bin_width=100.0, min_samples_per_bin=10)
     # RPM 기준 Id/Iq 전류 추세 확인
 
-    
     # visualizer.plot_auto_field_weakening_trend(fw_current_limit=100.0, rpm_bin_width=100.0, min_samples_per_bin=10)
     # 약계자 max current 설정값 예시를 넣고, 컨트롤러가 자동 분배한 Id/Iq operating point 확인
+
+    # visualizer.plot_torque_vs_iq(iq_bin_width=10.0, min_samples_per_bin=8, use_abs_iq=False)
+    # 실제 토크와 Iq 관계 및 Torque/Iq 추세 확인
