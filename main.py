@@ -258,5 +258,5 @@ if __name__ == "__main__":
     # Id-Iq operating point, 전류 제한원, MTPA, 전압 제한 타원 시각화
     # MTPA/전압 타원은 ld, lq, psi_f, voltage_limit 값을 넣어야 정확히 표시됨
 
-    visualizer.plot_empirical_mtpa_from_log(current_limit=200.0, current_bin_width=10.0, min_samples_per_bin=3, rpm_max=1500.0)
+    # visualizer.plot_empirical_mtpa_from_log(current_limit=200.0, current_bin_width=10.0, min_samples_per_bin=3, rpm_max=1500.0)
     # 모터 파라미터 없이 저속 로그에서 Torque/Current가 높은 Id-Iq 운전점 추세 확인
