@@ -1,6 +1,7 @@
 # G-BungE_LogAnalysis_Modified
 Based on `GBungE_logger_python` by quserunknownp.
 Modified and extended for GIST Baja/Formula EV team logger.
+The original workflow selected logs and plots by uncommenting code; this fork adds CLI and interactive menus for quicker repeated analysis.
 
 GIST Student Baja/Formula team logger project. Based on luftaquila/monolith v1.  
 
@@ -10,7 +11,7 @@ Modified and extended for GIST Baja/Formula EV team logger.
 
 ```text
 .
-├── main.py                # Main script for selecting logs and plots
+├── main.py                # CLI entry point for selecting logs and plots
 ├── logFetcher.py          # Binary log parser and VehicleLog data container
 ├── logPostProcessor.py    # Plotting and analysis functions
 ├── Logs/
@@ -44,7 +45,53 @@ python -m pip install -r requirements.txt
 
 The parser is based on 2025 vehicle Mk.4 logs and currently focuses on MK4 CAN data.
 
-When adding new logs, place the `.log` files under `Logs/<group name>/`, then set `log_group` and `log_files` in `main.py` to match that folder name and file name.
+When adding new logs, place the `.log` files under `Logs/<group name>/`, then pass the group and log file names to `main.py`.
+
+## CLI Usage
+
+Start an interactive menu for choosing a group, log files, and plots:
+
+```bash
+python3 main.py
+```
+
+You can also force the menu explicitly:
+
+```bash
+python3 main.py --interactive
+```
+
+In the menu, enter numbers like `1`, multiple values like `1,3,5`, ranges like `3-7`, or `all`.
+
+List available log groups and files:
+
+```bash
+python3 main.py --list-logs
+```
+
+List available plot/action names:
+
+```bash
+python3 main.py --list-plots
+```
+
+Run one plot against one log:
+
+```bash
+python3 main.py --group "2nd Test Week" --log "2025-08-17 05-31-36.log" --plot gps-only
+```
+
+Run multiple split-session logs in order:
+
+```bash
+python3 main.py \
+  --group "2nd Test Week" \
+  --log "2025-08-17 05-31-36.log" "2025-08-17 05-44-54.log" \
+  --plot torque-performance \
+  --plot vector-control
+```
+
+Absolute log paths are also supported. In non-interactive usage, if no log is given, `main.py` uses the default sample logs defined in the script.
 
 | Source | Key | Data |
 | --- | --- | --- |
@@ -61,8 +108,8 @@ When adding new logs, place the `.log` files under `Logs/<group name>/`, then se
 ## Notes
 
 - Logs are expected under `Logs/<group name>/`.
-- New log file paths are selected from `main.py` through `log_group` and `log_files`.
-- If a driving session is split into multiple log files, add them to `log_files` in order.
+- New log file paths are selected with `--group` and `--log`.
+- If a driving session is split into multiple log files, pass them to `--log` in order.
 - Most arrays are preallocated with `NaN`, so analysis functions should filter valid data when needed.
 - Cooling and thermal regression plots are especially sensitive to `NaN` or sparse data, so defensive filtering is applied before fitting trends.
 - `NaN` values usually mean that the signal was not available, not parsed, or not received at that timestamp. They are mainly useful for checking data coverage, CAN dropouts, or parser mapping issues, not as physical values.
