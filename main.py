@@ -69,7 +69,7 @@ log_data = VehicleLog()
 # - 'Main Competition'
 log_group = '2nd Test Week'
 log_files = [
-    '2025-08-17 07-13-44.log',  # 경민-1(+30kg) 세팅 위와 동일
+    '2025-08-17 05-31-36.log',  
 ]
 
 # 이어지는 데이터는 같은 리스트에 순서대로 넣을 것.
@@ -234,14 +234,16 @@ if __name__ == "__main__":
     '''
 
     # visualizer.plot_tn_curve_envelope() 
-    # T-N 커브 뽑아보고 싶어서 이하람 제작 
+    # T-N 커브 추세선
     '''
     대표 토크값은 상위 95%값 사용
     대표 RPM값은 그 구간 평균 RPM 사용
     '''
 
-    # visualizer.plot_torque_map_validity()
-
     # visualizer.plot_power_vs_rpm()
 
-    # visualizer.plot_id_per_iq(iq_bin_width=10.0, min_samples_per_bin=8, use_abs_iq=False)
+    # visualizer.plot_id_iq_vs_rpm(rpm_bin_width=100.0, min_samples_per_bin=10)
+    # RPM 기준 Id/Iq 전류 추세 확인
+
+    visualizer.plot_auto_field_weakening_trend(fw_current_limit=100.0, rpm_bin_width=100.0, min_samples_per_bin=10)
+    # 약계자 max current 설정값 예시를 넣고, 컨트롤러가 자동 분배한 Id/Iq operating point 확인

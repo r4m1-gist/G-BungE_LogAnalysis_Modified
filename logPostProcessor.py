@@ -196,7 +196,7 @@ class LogVisualizer:
 
         plt.tight_layout()
         plt.show()
-    
+
     def plot_gps_velocity_and_slip(self):
         """GPS 속도와 슬립율(Slip Ratio) 이중축 그래프"""
         
@@ -2276,239 +2276,6 @@ class LogVisualizer:
         plt.tight_layout()
         plt.show()
 
-    def plot_torque_map_validity(self):
-        """
-        [토크맵 타당성 검증]
-        목표:
-        1. RPM별 명령 토크 상한선과 실제 토크 상한선을 비교
-        2. RPM별 토크 추종률(Act / Cmd) 확인
-        3. RPM별 평균 토크 오차 확인
-        4. 각 RPM 구간에서 데이터가 충분한지 확인
-        해석 포인트:
-        - Cmd envelope와 Act envelope가 거의 겹치면 토크맵 구현이 잘 된 것
-        - 고RPM에서 Act가 급격히 낮아지면 전압 제한 / 약계자 / 열제한 / 전류제한 가능성
-        - 추종률이 낮은 구간은 실제 토크맵 타당성이 떨어지는 구간
-        """
-
-        # ------------------------------------------------------------
-        # 0. 필요한 데이터 존재 확인
-        # ------------------------------------------------------------
-        if self.data.vel_set is None or self.data.torqueAct_set is None:
-            print("데이터 부족: vel_set, torqueAct_set이 필요합니다.")
-            return
-
-        # Tdmd_set이 따로 있는 구조라면 그걸 쓰고,
-        # 없으면 함수 종료
-        if not hasattr(self.data, 'Tdmd_set') or self.data.Tdmd_set is None:
-            print("데이터 부족: Tdmd_set(명령 토크 데이터)이 필요합니다.")
-            return
-
-        # ------------------------------------------------------------
-        # 1. 기준 시간축 설정 (속도 기준)
-        # ------------------------------------------------------------
-        t_ref = self.data.vel_set[0, :]
-        rpm_raw = self.data.vel_set[1, :]
-
-        # ------------------------------------------------------------
-        # 2. 명령 토크 / 실제 토크 동기화
-        # ------------------------------------------------------------
-        t_cmd = self.data.Tdmd_set[0, :]
-        cmd_raw = self.data.Tdmd_set[1, :]
-
-        t_act = self.data.torqueAct_set[0, :]
-        act_raw = self.data.torqueAct_set[1, :]
-
-        # np.interp는 시간축이 오름차순이라는 가정이 있으므로 정렬
-        cmd_sort = np.argsort(t_cmd)
-        t_cmd = t_cmd[cmd_sort]
-        cmd_raw = cmd_raw[cmd_sort]
-
-        act_sort = np.argsort(t_act)
-        t_act = t_act[act_sort]
-        act_raw = act_raw[act_sort]
-
-        ref_sort = np.argsort(t_ref)
-        t_ref = t_ref[ref_sort]
-        rpm_raw = rpm_raw[ref_sort]
-
-        # 보간
-        cmd_sync = np.interp(t_ref, t_cmd, cmd_raw)
-        act_sync = np.interp(t_ref, t_act, act_raw)
-
-        # ------------------------------------------------------------
-        # 3. 기본 필터링
-        # ------------------------------------------------------------
-        # 토크맵 검증 목적이므로:
-        # - 정방향 주행 위주
-        # - 너무 이상한 값 제외
-        valid = (
-            np.isfinite(t_ref) &
-            np.isfinite(rpm_raw) &
-            np.isfinite(cmd_sync) &
-            np.isfinite(act_sync) &
-            (rpm_raw >= 0) &
-            (rpm_raw <= 4000) &
-            (cmd_sync >= -10) &
-            (cmd_sync <= 200) &
-            (act_sync >= -50) &
-            (act_sync <= 200)
-        )
-
-        rpm = rpm_raw[valid]
-        cmd = cmd_sync[valid]
-        act = act_sync[valid]
-
-        if len(rpm) == 0:
-            print("유효한 데이터가 없습니다.")
-            return
-
-        # 추가 필터:
-        # 토크맵 검증은 보통 구동 토크 기준이므로 양(+)의 명령 토크 위주로 본다.
-        drive_mask = cmd > 5.0
-        rpm = rpm[drive_mask]
-        cmd = cmd[drive_mask]
-        act = act[drive_mask]
-
-        if len(rpm) == 0:
-            print("구동 토크 영역(cmd > 5 Nm)에 유효한 데이터가 없습니다.")
-            return
-
-        # ------------------------------------------------------------
-        # 4. RPM bin 설정
-        # ------------------------------------------------------------
-        bin_width = 100
-        bins = np.arange(0, 4000 + bin_width, bin_width)
-
-        rpm_centers = []
-        cmd_env = []
-        act_env = []
-        tracking_ratio = []
-        mean_error = []
-        counts = []
-
-        # ------------------------------------------------------------
-        # 5. RPM별 envelope / 오차 / 추종률 계산
-        # ------------------------------------------------------------
-        for i in range(len(bins) - 1):
-            left = bins[i]
-            right = bins[i + 1]
-
-            mask = (rpm >= left) & (rpm < right)
-
-            if np.sum(mask) < 10:
-                continue
-
-            rpm_bin = rpm[mask]
-            cmd_bin = cmd[mask]
-            act_bin = act[mask]
-
-            # 대표 RPM: 평균
-            rpm_rep = np.mean(rpm_bin)
-
-            # 상한선: 상위 95%
-            cmd_rep = np.percentile(cmd_bin, 95)
-            act_rep = np.percentile(act_bin, 95)
-
-            # 평균 오차
-            err_rep = np.mean(act_bin - cmd_bin)
-
-            # 추종률
-            # 너무 작은 cmd에서 ratio가 이상하게 튀는 걸 막기 위해 대표값 기준으로 계산
-            if cmd_rep > 1e-6:
-                ratio_rep = act_rep / cmd_rep
-            else:
-                ratio_rep = np.nan
-
-            rpm_centers.append(rpm_rep)
-            cmd_env.append(cmd_rep)
-            act_env.append(act_rep)
-            tracking_ratio.append(ratio_rep)
-            mean_error.append(err_rep)
-            counts.append(len(rpm_bin))
-
-        rpm_centers = np.array(rpm_centers)
-        cmd_env = np.array(cmd_env)
-        act_env = np.array(act_env)
-        tracking_ratio = np.array(tracking_ratio)
-        mean_error = np.array(mean_error)
-        counts = np.array(counts)
-
-        if len(rpm_centers) == 0:
-            print("RPM bin별 분석이 불가능합니다. 데이터가 부족합니다.")
-            return
-
-        # ------------------------------------------------------------
-        # 6. 그래프
-        # ------------------------------------------------------------
-        fig, axs = plt.subplots(2, 2, figsize=(14, 10))
-
-        # ---------------------------
-        # (1) Raw scatter + envelope
-        # ---------------------------
-        axs[0, 0].scatter(rpm[::10], cmd[::10], s=6, alpha=0.15, label='Cmd Raw')
-        axs[0, 0].scatter(rpm[::10], act[::10], s=6, alpha=0.15, label='Act Raw')
-
-        axs[0, 0].plot(rpm_centers, cmd_env, 'r--', linewidth=2.5, label='Cmd Envelope (95%)')
-        axs[0, 0].plot(rpm_centers, act_env, 'b-', linewidth=2.5, label='Act Envelope (95%)')
-
-        axs[0, 0].set_title('Torque Envelope Comparison')
-        axs[0, 0].set_xlabel('RPM')
-        axs[0, 0].set_ylabel('Torque (Nm)')
-        axs[0, 0].grid(True)
-        axs[0, 0].legend()
-
-        # ---------------------------
-        # (2) Tracking ratio
-        # ---------------------------
-        axs[0, 1].plot(rpm_centers, tracking_ratio, 'm-o', markersize=4, linewidth=2)
-        axs[0, 1].axhline(1.0, color='gray', linestyle='--', linewidth=1.5)
-        axs[0, 1].axhline(0.9, color='orange', linestyle='--', linewidth=1.5)
-        axs[0, 1].set_title('Torque Tracking Ratio (Act/Cmd)')
-        axs[0, 1].set_xlabel('RPM')
-        axs[0, 1].set_ylabel('Tracking Ratio')
-        axs[0, 1].grid(True)
-
-        # ---------------------------
-        # (3) Mean torque error
-        # ---------------------------
-        axs[1, 0].plot(rpm_centers, mean_error, 'k-o', markersize=4, linewidth=2)
-        axs[1, 0].axhline(0, color='gray', linestyle='--', linewidth=1.5)
-        axs[1, 0].set_title('Mean Torque Error (Act - Cmd)')
-        axs[1, 0].set_xlabel('RPM')
-        axs[1, 0].set_ylabel('Error (Nm)')
-        axs[1, 0].grid(True)
-
-        # ---------------------------
-        # (4) Sample count
-        # ---------------------------
-        axs[1, 1].bar(rpm_centers, counts, width=bin_width * 0.8)
-        axs[1, 1].set_title('Data Count per RPM Bin')
-        axs[1, 1].set_xlabel('RPM')
-        axs[1, 1].set_ylabel('Sample Count')
-        axs[1, 1].grid(True)
-
-        plt.tight_layout()
-        plt.show()
-
-        # ------------------------------------------------------------
-        # 7. 텍스트 요약 출력
-        # ------------------------------------------------------------
-        print("\n[Torque Map Validity Summary]")
-        print(f"- Total valid drive points: {len(rpm)}")
-        print(f"- RPM bins analyzed: {len(rpm_centers)}")
-        print(f"- Mean tracking ratio: {np.nanmean(tracking_ratio):.3f}")
-        print(f"- Worst tracking ratio: {np.nanmin(tracking_ratio):.3f}")
-        print(f"- Mean torque error: {np.nanmean(mean_error):.3f} Nm")
-
-        # 추종률이 특히 낮은 구간 찾기
-        low_ratio_mask = tracking_ratio < 0.85
-        if np.any(low_ratio_mask):
-            print("- Low tracking ratio RPM zones:")
-            for r, rr in zip(rpm_centers[low_ratio_mask], tracking_ratio[low_ratio_mask]):
-                print(f"  RPM ~ {r:.0f}, ratio = {rr:.3f}")
-        else:
-            print("- No severe low-tracking RPM zone found.")
-
     def plot_power_vs_rpm(self):
         if self.data.vel_set is None or self.data.torqueAct_set is None:
             print("필요 데이터 없음")
@@ -2600,174 +2367,322 @@ class LogVisualizer:
         plt.tight_layout()
         plt.show()
 
-    def plot_id_per_iq(self, iq_bin_width=10.0, min_samples_per_bin=8, use_abs_iq=False):
+    def plot_id_iq_vs_rpm(self, rpm_bin_width=100.0, min_samples_per_bin=10, current_limit=None):
         """
-        [신규]
-        Iq 당 Id 분포를 보기 위한 전용 그래프
+        [약계자 기본 확인]
+        X축을 RPM으로 두고 Id/Iq 전류가 어떻게 변하는지 확인한다.
 
-        목적
-        1. 시간축 겹침 없이 "Iq가 커질수록 Id가 어떻게 변하는지" 확인
-        2. Sevcon 약계자 제어가
-        - 단순히 Id limit만 거는지
-        - 아니면 Iq 조건별로 Id가 달라지는지
-        를 시각적으로 확인
-
-        그래프 구성
-        1) 전체 산점도 : x = Iq, y = Id
-        2) Bin 평균/중앙값 선 : Iq 구간별 대표 Id
-        3) Bin 최소값 선 : 각 Iq 구간에서 가장 음의 방향으로 내려간 Id
-        -> 약계자가 limit처럼 박히는지 보기 좋음
-
-        Parameters
-        ----------
-        iq_bin_width : float
-            Iq를 몇 A 간격으로 묶을지 결정
-            예: 10.0 이면 10A 단위 bin
-        min_samples_per_bin : int
-            bin 안에 최소 몇 개 이상 데이터가 있어야 대표값 계산할지
-        use_abs_iq : bool
-            True면 |Iq| 기준으로 분석
-            False면 부호 포함한 Iq 그대로 분석
-            보통 구동만 보면 False, 회생/양방향 포함해서 절대값 기준 보고 싶으면 True
+        해석 포인트
+        - RPM이 올라가면서 Id가 음수 방향으로 내려가면 약계자 진입
+        - Iq는 토크 전류이므로, 고RPM에서 Iq가 줄고 Id가 음수로 커지는지 확인
+        - current_limit을 넣으면 +/- 기준선을 함께 표시
         """
-
-        # ------------------------------------------------------------
-        # 0. 데이터 존재 확인
-        # ------------------------------------------------------------
-        if self.data.Idq_set is None:
-            print("Idq 데이터가 없습니다.")
+        if self.data.vel_set is None or self.data.Idq_set is None:
+            print("데이터 부족: vel_set, Idq_set이 필요합니다.")
             return
 
-        # ------------------------------------------------------------
-        # 1. 원본 데이터 추출
-        # Idq_set 구조: [Time, Id, Iq]
-        # ------------------------------------------------------------
-        t_dq = self.data.Idq_set[0, :]
+        t_rpm_raw = self.data.vel_set[0, :]
+        rpm_raw = self.data.vel_set[1, :]
+        t_dq_raw = self.data.Idq_set[0, :]
         id_raw = self.data.Idq_set[1, :]
         iq_raw = self.data.Idq_set[2, :]
 
-        # ------------------------------------------------------------
-        # 2. NaN / 비정상값 제거
-        # 너무 넓은 범위는 노이즈나 파싱 이상일 가능성이 있어서 1차 필터링
-        # 필요하면 나중에 범위 수정 가능
-        # ------------------------------------------------------------
-        valid = (
-            np.isfinite(t_dq) &
-            np.isfinite(id_raw) &
-            np.isfinite(iq_raw) &
-            (id_raw > -2000) & (id_raw < 2000) &
-            (iq_raw > -2000) & (iq_raw < 2000)
-        )
+        rpm_valid = np.isfinite(t_rpm_raw) & np.isfinite(rpm_raw)
+        dq_valid = np.isfinite(t_dq_raw) & np.isfinite(id_raw) & np.isfinite(iq_raw)
 
-        id_curr = id_raw[valid]
-        iq_curr = iq_raw[valid]
+        t_rpm = t_rpm_raw[rpm_valid]
+        rpm = rpm_raw[rpm_valid]
+        t_dq = t_dq_raw[dq_valid]
+        id_curr = id_raw[dq_valid]
+        iq_curr = iq_raw[dq_valid]
 
-        if len(id_curr) == 0:
-            print("유효한 Id/Iq 데이터가 없습니다.")
+        if len(t_rpm) < 2 or len(t_dq) == 0:
+            print("유효한 RPM 또는 Id/Iq 데이터가 부족합니다.")
             return
 
-        # ------------------------------------------------------------
-        # 3. 분석용 Iq 생성
-        # use_abs_iq=True면 절대값 기준으로 묶음
-        # ------------------------------------------------------------
-        if use_abs_iq:
-            iq_plot = np.abs(iq_curr)
-            x_label = '|Iq| (A)'
-        else:
-            iq_plot = iq_curr
-            x_label = 'Iq (A)'
+        rpm_sort = np.argsort(t_rpm)
+        t_rpm = t_rpm[rpm_sort]
+        rpm = rpm[rpm_sort]
 
-        # ------------------------------------------------------------
-        # 4. Bin 설정
-        # ------------------------------------------------------------
-        iq_min = np.floor(np.min(iq_plot) / iq_bin_width) * iq_bin_width
-        iq_max = np.ceil(np.max(iq_plot) / iq_bin_width) * iq_bin_width
-        bins = np.arange(iq_min, iq_max + iq_bin_width, iq_bin_width)
+        dq_sort = np.argsort(t_dq)
+        t_dq = t_dq[dq_sort]
+        id_curr = id_curr[dq_sort]
+        iq_curr = iq_curr[dq_sort]
 
-        bin_centers = []
+        rpm_sync = np.interp(t_dq, t_rpm, rpm)
+
+        valid = (
+            np.isfinite(rpm_sync) &
+            np.isfinite(id_curr) &
+            np.isfinite(iq_curr) &
+            (rpm_sync >= 0) &
+            (rpm_sync <= 6000) &
+            (id_curr > -1000) & (id_curr < 1000) &
+            (iq_curr > -1000) & (iq_curr < 1000)
+        )
+
+        rpm_sync = rpm_sync[valid]
+        id_curr = id_curr[valid]
+        iq_curr = iq_curr[valid]
+
+        if len(rpm_sync) == 0:
+            print("유효한 RPM-Id/Iq 데이터가 없습니다.")
+            return
+
+        rpm_min = np.floor(np.min(rpm_sync) / rpm_bin_width) * rpm_bin_width
+        rpm_max = np.ceil(np.max(rpm_sync) / rpm_bin_width) * rpm_bin_width
+        bins = np.arange(rpm_min, rpm_max + rpm_bin_width, rpm_bin_width)
+
+        rpm_centers = []
         id_mean = []
-        id_median = []
-        id_min = []
+        iq_mean = []
+        id_p10 = []
+        iq_p90 = []
         counts = []
 
-        # ------------------------------------------------------------
-        # 5. Iq bin별 대표 Id 계산
-        # mean   : 전체 경향
-        # median : 이상치 덜 민감
-        # min    : 가장 음의 방향 Id -> 약계자 limit 확인에 유리
-        # ------------------------------------------------------------
         for i in range(len(bins) - 1):
-            left = bins[i]
-            right = bins[i + 1]
-
-            mask = (iq_plot >= left) & (iq_plot < right)
-
+            mask = (rpm_sync >= bins[i]) & (rpm_sync < bins[i + 1])
             if np.sum(mask) < min_samples_per_bin:
                 continue
 
-            id_bin = id_curr[mask]
-            iq_bin = iq_plot[mask]
+            rpm_centers.append(np.mean(rpm_sync[mask]))
+            id_mean.append(np.mean(id_curr[mask]))
+            iq_mean.append(np.mean(iq_curr[mask]))
+            id_p10.append(np.percentile(id_curr[mask], 10))
+            iq_p90.append(np.percentile(iq_curr[mask], 90))
+            counts.append(np.sum(mask))
 
-            bin_centers.append(np.mean(iq_bin))
-            id_mean.append(np.mean(id_bin))
-            id_median.append(np.median(id_bin))
-            id_min.append(np.min(id_bin))
-            counts.append(len(id_bin))
-
-        bin_centers = np.array(bin_centers)
+        rpm_centers = np.array(rpm_centers)
         id_mean = np.array(id_mean)
-        id_median = np.array(id_median)
-        id_min = np.array(id_min)
+        iq_mean = np.array(iq_mean)
+        id_p10 = np.array(id_p10)
+        iq_p90 = np.array(iq_p90)
         counts = np.array(counts)
 
-        # ------------------------------------------------------------
-        # 6. 그래프 그리기
-        # 위: Iq vs Id 산점도 + 대표선
-        # 아래: 각 Iq bin의 샘플 수
-        # ------------------------------------------------------------
         fig, (ax1, ax2) = plt.subplots(
-            2, 1, figsize=(11, 9), sharex=True,
+            2, 1, figsize=(12, 8), sharex=True,
             gridspec_kw={'height_ratios': [4, 1]}
         )
 
-        # 전체 산점도
-        ax1.scatter(iq_plot, id_curr, s=6, alpha=0.15, label='Raw Id-Iq Points')
+        ax1.scatter(rpm_sync[::5], id_curr[::5], s=5, alpha=0.15, label='Id Raw')
+        ax1.scatter(rpm_sync[::5], iq_curr[::5], s=5, alpha=0.15, label='Iq Raw')
+        ax1.axhline(0, color='gray', linestyle='--', linewidth=1)
+        if current_limit is not None:
+            ax1.axhline(current_limit, color='orange', linestyle='--', linewidth=1.2, label=f'+{current_limit:.0f} A Ref')
+            ax1.axhline(-current_limit, color='orange', linestyle='--', linewidth=1.2, label=f'-{current_limit:.0f} A Ref')
 
-        # 기준선
-        ax1.axhline(0, linestyle='--', linewidth=1)
-        ax1.axvline(0, linestyle='--', linewidth=1)
+        if len(rpm_centers) > 0:
+            ax1.plot(rpm_centers, id_mean, 'b-', linewidth=2.5, label='Id Mean')
+            ax1.plot(rpm_centers, iq_mean, 'r-', linewidth=2.5, label='Iq Mean')
+            ax1.plot(rpm_centers, id_p10, 'b:', linewidth=2, label='Id 10%')
+            ax1.plot(rpm_centers, iq_p90, 'r:', linewidth=2, label='Iq 90%')
 
-        # 대표선
-        if len(bin_centers) > 0:
-            ax1.plot(bin_centers, id_mean, linewidth=2, label='Bin Mean Id')
-            ax1.plot(bin_centers, id_median, linewidth=2, linestyle='--', label='Bin Median Id')
-            ax1.plot(bin_centers, id_min, linewidth=2, linestyle=':', label='Bin Min Id')
-
-        ax1.set_ylabel('Id (A)')
-        ax1.set_title('Id per Iq Analysis')
+        ax1.set_title('Id / Iq vs RPM')
+        ax1.set_ylabel('Current (A)')
         ax1.grid(True)
-        ax1.legend()
+        ax1.legend(loc='best')
 
-        # 샘플 개수
-        if len(bin_centers) > 0:
-            ax2.bar(bin_centers, counts, width=iq_bin_width * 0.8)
-        ax2.set_xlabel(x_label)
+        if len(rpm_centers) > 0:
+            ax2.bar(rpm_centers, counts, width=rpm_bin_width * 0.8)
+        ax2.set_xlabel('RPM')
         ax2.set_ylabel('Count')
-        ax2.set_title('Sample Count per Iq Bin')
+        ax2.set_title('Sample Count per RPM Bin')
         ax2.grid(True)
 
         plt.tight_layout()
         plt.show()
 
-        # ------------------------------------------------------------
-        # 7. 텍스트 요약
-        # ------------------------------------------------------------
-        print("\n[Id per Iq Summary]")
-        print(f"- Total valid points: {len(id_curr)}")
-        print(f"- Bin width: {iq_bin_width:.1f} A")
-        print(f"- Number of analyzed bins: {len(bin_centers)}")
+        print("\n[Id/Iq vs RPM Summary]")
+        print(f"- Total valid points: {len(rpm_sync)}")
+        print(f"- RPM bins analyzed: {len(rpm_centers)}")
+        if current_limit is not None:
+            print(f"- Current reference line: +/-{current_limit:.0f} A")
 
-        if len(bin_centers) > 0:
-            global_min_idx = np.argmin(id_min)
-            print(f"- Most negative Id bin: Iq ~ {bin_centers[global_min_idx]:.1f} A")
-            print(f"  -> Min Id = {id_min[global_min_idx]:.2f} A")
+        fw_mask = (id_curr < -5.0) & (np.abs(iq_curr) > 10.0) & (rpm_sync > 100.0)
+        if np.any(fw_mask):
+            print(f"- First visible FW point: RPM ~ {np.min(rpm_sync[fw_mask]):.0f}, Id < -5 A, |Iq| > 10 A")
+            print(f"- Most negative Id: {np.min(id_curr):.2f} A")
+        else:
+            print("- 유의미한 약계자 구간(Id < -5 A, |Iq| > 10 A)이 뚜렷하게 보이지 않습니다.")
+
+    def plot_auto_field_weakening_trend(self, fw_current_limit=None, rpm_bin_width=100.0, min_samples_per_bin=10):
+        """
+        [자동 약계자 / FW current limit 확인]
+        약계자 전류를 Iq별로 직접 지정하지 못하고 max current만 설정하는 구조에서,
+        컨트롤러가 실제로 어떤 Id/Iq 벡터를 만드는지 확인한다.
+
+        그래프 구성
+        1. RPM별 Id/Iq 평균 추세
+        2. RPM별 약계자 전류(-Id)와 설정 limit 비교
+        3. Id-Iq operating point를 RPM 색상으로 표시
+        """
+        if self.data.vel_set is None or self.data.Idq_set is None:
+            print("데이터 부족: vel_set, Idq_set이 필요합니다.")
+            return
+
+        t_rpm_raw = self.data.vel_set[0, :]
+        rpm_raw = self.data.vel_set[1, :]
+        t_dq_raw = self.data.Idq_set[0, :]
+        id_raw = self.data.Idq_set[1, :]
+        iq_raw = self.data.Idq_set[2, :]
+
+        rpm_valid = np.isfinite(t_rpm_raw) & np.isfinite(rpm_raw)
+        dq_valid = np.isfinite(t_dq_raw) & np.isfinite(id_raw) & np.isfinite(iq_raw)
+
+        t_rpm = t_rpm_raw[rpm_valid]
+        rpm = rpm_raw[rpm_valid]
+        t_dq = t_dq_raw[dq_valid]
+        id_curr = id_raw[dq_valid]
+        iq_curr = iq_raw[dq_valid]
+
+        if len(t_rpm) < 2 or len(t_dq) == 0:
+            print("유효한 RPM 또는 Id/Iq 데이터가 부족합니다.")
+            return
+
+        rpm_sort = np.argsort(t_rpm)
+        t_rpm = t_rpm[rpm_sort]
+        rpm = rpm[rpm_sort]
+
+        dq_sort = np.argsort(t_dq)
+        t_dq = t_dq[dq_sort]
+        id_curr = id_curr[dq_sort]
+        iq_curr = iq_curr[dq_sort]
+
+        rpm_sync = np.interp(t_dq, t_rpm, rpm)
+        current_mag = np.sqrt(id_curr**2 + iq_curr**2)
+        fw_current = np.maximum(-id_curr, 0.0)
+
+        valid = (
+            np.isfinite(rpm_sync) &
+            np.isfinite(id_curr) &
+            np.isfinite(iq_curr) &
+            np.isfinite(current_mag) &
+            np.isfinite(fw_current) &
+            (rpm_sync >= 0) &
+            (rpm_sync <= 6000) &
+            (id_curr > -1000) & (id_curr < 1000) &
+            (iq_curr > -1000) & (iq_curr < 1000) &
+            (current_mag < 1000)
+        )
+
+        rpm_sync = rpm_sync[valid]
+        id_curr = id_curr[valid]
+        iq_curr = iq_curr[valid]
+        current_mag = current_mag[valid]
+        fw_current = fw_current[valid]
+
+        if len(rpm_sync) == 0:
+            print("유효한 자동 약계자 분석 데이터가 없습니다.")
+            return
+
+        rpm_min = np.floor(np.min(rpm_sync) / rpm_bin_width) * rpm_bin_width
+        rpm_max = np.ceil(np.max(rpm_sync) / rpm_bin_width) * rpm_bin_width
+        bins = np.arange(rpm_min, rpm_max + rpm_bin_width, rpm_bin_width)
+
+        rpm_centers = []
+        id_mean = []
+        iq_mean = []
+        current_mean = []
+        current_p95 = []
+        fw_current_mean = []
+        fw_current_p95 = []
+        fw_ratio_median = []
+
+        for i in range(len(bins) - 1):
+            mask = (rpm_sync >= bins[i]) & (rpm_sync < bins[i + 1])
+            if np.sum(mask) < min_samples_per_bin:
+                continue
+
+            iq_bin = iq_curr[mask]
+            id_bin = id_curr[mask]
+            ratio_valid = np.abs(iq_bin) > 5.0
+            ratio = np.full_like(iq_bin, np.nan, dtype=float)
+            ratio[ratio_valid] = -id_bin[ratio_valid] / np.abs(iq_bin[ratio_valid])
+
+            rpm_centers.append(np.mean(rpm_sync[mask]))
+            id_mean.append(np.mean(id_bin))
+            iq_mean.append(np.mean(iq_bin))
+            current_mean.append(np.mean(current_mag[mask]))
+            current_p95.append(np.percentile(current_mag[mask], 95))
+            fw_current_mean.append(np.mean(fw_current[mask]))
+            fw_current_p95.append(np.percentile(fw_current[mask], 95))
+            fw_ratio_median.append(np.nanmedian(ratio))
+
+        rpm_centers = np.array(rpm_centers)
+        id_mean = np.array(id_mean)
+        iq_mean = np.array(iq_mean)
+        current_mean = np.array(current_mean)
+        current_p95 = np.array(current_p95)
+        fw_current_mean = np.array(fw_current_mean)
+        fw_current_p95 = np.array(fw_current_p95)
+        fw_ratio_median = np.array(fw_ratio_median)
+
+        fig, axs = plt.subplots(2, 2, figsize=(14, 10))
+
+        axs[0, 0].scatter(rpm_sync[::5], id_curr[::5], s=5, alpha=0.12, label='Id Raw')
+        axs[0, 0].scatter(rpm_sync[::5], iq_curr[::5], s=5, alpha=0.12, label='Iq Raw')
+        axs[0, 0].axhline(0, color='gray', linestyle='--', linewidth=1)
+        if fw_current_limit is not None:
+            axs[0, 0].axhline(-fw_current_limit, color='orange', linestyle='--', linewidth=1.2, label=f'-{fw_current_limit:.0f} A FW Ref')
+        if len(rpm_centers) > 0:
+            axs[0, 0].plot(rpm_centers, id_mean, 'b-', linewidth=2.5, label='Id Mean')
+            axs[0, 0].plot(rpm_centers, iq_mean, 'r-', linewidth=2.5, label='Iq Mean')
+        axs[0, 0].set_title('Auto FW Current Split vs RPM')
+        axs[0, 0].set_xlabel('RPM')
+        axs[0, 0].set_ylabel('Current (A)')
+        axs[0, 0].grid(True)
+        axs[0, 0].legend()
+
+        axs[0, 1].scatter(rpm_sync[::5], fw_current[::5], s=5, alpha=0.15, label='FW Current Raw (-Id)')
+        if fw_current_limit is not None:
+            axs[0, 1].axhline(fw_current_limit, color='orange', linestyle='--', linewidth=2, label=f'{fw_current_limit:.0f} A FW Ref')
+        if len(rpm_centers) > 0:
+            axs[0, 1].plot(rpm_centers, fw_current_mean, 'k-', linewidth=2.5, label='FW Current Mean')
+            axs[0, 1].plot(rpm_centers, fw_current_p95, 'm:', linewidth=2.5, label='FW Current 95%')
+        axs[0, 1].set_title('Field Weakening Current (-Id) vs RPM')
+        axs[0, 1].set_xlabel('RPM')
+        axs[0, 1].set_ylabel('-Id when Id < 0 (A)')
+        axs[0, 1].grid(True)
+        axs[0, 1].legend()
+
+        sc = axs[1, 0].scatter(iq_curr, id_curr, c=rpm_sync, s=8, alpha=0.35, cmap='turbo')
+        axs[1, 0].axhline(0, color='gray', linestyle='--', linewidth=1)
+        axs[1, 0].axvline(0, color='gray', linestyle='--', linewidth=1)
+        if fw_current_limit is not None:
+            axs[1, 0].axhline(-fw_current_limit, color='orange', linestyle='--', linewidth=1.5,
+                              label=f'-{fw_current_limit:.0f} A FW Ref')
+        axs[1, 0].set_title('Id-Iq Operating Points Colored by RPM')
+        axs[1, 0].set_xlabel('Iq (A)')
+        axs[1, 0].set_ylabel('Id (A)')
+        axs[1, 0].axis('equal')
+        axs[1, 0].grid(True)
+        axs[1, 0].legend()
+        cbar = fig.colorbar(sc, ax=axs[1, 0])
+        cbar.set_label('RPM')
+
+        if len(rpm_centers) > 0:
+            axs[1, 1].plot(rpm_centers, fw_ratio_median, 'g-o', markersize=4, linewidth=2)
+        axs[1, 1].axhline(0, color='gray', linestyle='--', linewidth=1)
+        axs[1, 1].set_title('Median Field Weakening Ratio (-Id / |Iq|)')
+        axs[1, 1].set_xlabel('RPM')
+        axs[1, 1].set_ylabel('-Id / |Iq|')
+        axs[1, 1].grid(True)
+
+        plt.tight_layout()
+        plt.show()
+
+        print("\n[Auto Field Weakening Trend Summary]")
+        print(f"- Total valid points: {len(rpm_sync)}")
+        if fw_current_limit is not None:
+            print(f"- FW current reference line: {fw_current_limit:.0f} A")
+        print(f"- Max |I|: {np.max(current_mag):.2f} A")
+        print(f"- 95% |I|: {np.percentile(current_mag, 95):.2f} A")
+        print(f"- Most negative Id: {np.min(id_curr):.2f} A")
+        print(f"- Max FW current (-Id): {np.max(fw_current):.2f} A")
+
+        if fw_current_limit is not None:
+            near_limit = fw_current > fw_current_limit * 0.9
+            if np.any(near_limit):
+                print(f"- First >90% FW current reference point: RPM ~ {np.min(rpm_sync[near_limit]):.0f}")
+            else:
+                print("- FW current가 reference의 90%를 넘는 구간이 뚜렷하지 않습니다.")
