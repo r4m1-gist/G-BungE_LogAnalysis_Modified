@@ -3,7 +3,7 @@
 #MAC OS
 .DS_Store
 
-#Python in MAC, CASH files
+#Python in MAC, CACHE files
 __pycache__/ 
 *.pyc 
 
