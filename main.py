@@ -172,6 +172,9 @@ if __name__ == "__main__":
     # visualizer.plot_laps_slideshow()
     # 키보드 좌우 방향키로 랩을 넘겨보는 기능 
 
+    # ================= Cooling Validation Set =================
+    # 냉각 성능, 열부하, 저부하 냉각 추세를 확인할 때 아래 묶음을 순서대로 켜면 됨.
+
     # visualizer.plot_power_and_temp()
     # [냉각 성능 분석용] 입력 전력(P = V*I)과 모터 온도 비교 그래프
     
@@ -238,24 +241,18 @@ if __name__ == "__main__":
     저온(포화) 영역 데이터 배제 -> 진짜 냉각 성능(기울기) 확인
     '''
 
+    # ===========================================================
+
+    # ================= Torque Map Validation Set =================
+
+    # visualizer.plot_power_vs_rpm()
+
     # visualizer.plot_tn_curve_envelope() 
     # T-N Curve Envelope (토크-속도 곡선 봉우리)
     '''
     대표 토크값은 상위 95%값 사용
     대표 RPM값은 그 구간 평균 RPM 사용
     '''
-
-    # visualizer.plot_power_vs_rpm()
-
-    # ================= Torque Map Validation Set =================
-    # 작년 토크맵 세팅 문제와 약계자 제어 경향을 같이 확인할 때 아래 묶음을 순서대로 켜면 됨.
-    # visualizer.plot_tn_curve_envelope()
-    # visualizer.plot_torque_vs_iq(iq_bin_width=10.0, min_samples_per_bin=8, use_abs_iq=False)
-    # visualizer.plot_id_iq_vs_rpm(rpm_bin_width=100.0, min_samples_per_bin=10)
-    # visualizer.plot_auto_field_weakening_trend(fw_current_limit=150.0, rpm_bin_width=100.0, min_samples_per_bin=10)
-    # visualizer.plot_motor_control_constraints(current_limit=200.0)
-    # visualizer.plot_empirical_mtpa_from_log(current_limit=200.0, current_bin_width=10.0, min_samples_per_bin=3, rpm_max=1500.0)
-    # =============================================================
 
     # visualizer.plot_id_iq_vs_rpm(rpm_bin_width=100.0, min_samples_per_bin=10)
     # RPM 기준 Id/Iq 전류 추세 확인
@@ -272,3 +269,5 @@ if __name__ == "__main__":
 
     # visualizer.plot_empirical_mtpa_from_log(current_limit=200.0, current_bin_width=10.0, min_samples_per_bin=3, rpm_max=1500.0)
     # 모터 파라미터 없이 저속 로그에서 Torque/Current가 높은 Id-Iq 운전점 추세 확인
+    
+    # =============================================================
