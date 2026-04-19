@@ -140,9 +140,9 @@ Users are expected to adjust key parameters at the main script level when callin
 
 For example:
 
-plot_id_iq_vs_rpm: RPM bin size and minimum sample count should be tuned depending on data density.
-plot_auto_field_weakening_trend: Field weakening current limits must be set appropriately to match controller settings.
-plot_torque_vs_iq: Iq binning and absolute value usage may affect interpretation of torque linearity.
-plot_motor_control_constraints: Current limits and operating boundaries (MTPA, voltage ellipse) should reflect actual system constraints.
+`plot_id_iq_vs_rpm`: RPM bin size and minimum sample count should be tuned depending on data density.
+`plot_auto_field_weakening_trend`: Field weakening current limits must be set appropriately to match controller settings.
+`plot_torque_vs_iq`: Iq binning and absolute value usage may affect interpretation of torque linearity.
+`plot_motor_control_constraints`: Current limits and operating boundaries (MTPA, voltage ellipse) should reflect actual system constraints.
 
 In summary, treat plotting parameters as part of the analysis configuration (in main), not as fixed logic inside the visualizer class.
