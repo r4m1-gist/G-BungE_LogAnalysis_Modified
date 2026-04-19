@@ -9,3 +9,5 @@ __pycache__/
 
 # Personal analysis demo file
 main_analysis.py
+
+# If YOU'RE ON WINDOWS, ADD YOUR OWN IGNORE RULES (I'm too lazy to include them here)
